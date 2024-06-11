@@ -28,20 +28,24 @@ for iMC = 1:MCMC.nMC
     MCMC.m(:, iMC) = m_current;
     
     % propose a new model
-    m_propose = m_current + mvnrnd(zeros(nmodel,1), MCMC.proposalCov);
+    m_propose = m_current + mvnrnd(zeros(nmodel,1), MCMC.proposalCov)';
 
     % unpack parameters for maximum code clarity
     m_propose_slope = m_propose(1);
     m_propose_yintercept = m_propose(2);
-    m_current_slope = m_propose(1);
+    m_current_slope = m_current(1);
     m_current_yintercept = m_current(2);
 
     % calculate residuals for old and new models
-    dhat_current = m_current * ones(ndata, 1);
-    dhat_propose = m_propose * ones(ndata, 1);
-    r2_current = (data.d - dhat_current).^2; % squared residuals
-    r2_propose = (data.d - dhat_propose).^2;
-    ssr_current = sum(r2_current); % sum of the squared residuals = -loglikelihood
+    dhat_current = m_current_slope * data.x + m_current_yintercept;
+    dhat_propose = m_propose_slope * data.x + m_propose_yintercept;
+    
+    % squared weighted residuals for likelihood function
+    r2_current = (data.y - dhat_current).^2 / data.yUncertainty^2; 
+    r2_propose = (data.y - dhat_propose).^2 / data.yUncertainty^2;
+    
+    % sum of the squared residuals \propto -loglikelihood
+    ssr_current = sum(r2_current); 
     ssr_propose = sum(r2_propose);
 
     % difference in ssr (-log of likelihood ratio, neglecting 1/2 factor)
@@ -60,13 +64,31 @@ for iMC = 1:MCMC.nMC
 
 end % for iMC = 1:nMC
 
-MCMC.mean = mean(MCMC.m);
-MCMC.stdv = std(MCMC.m);
-
-histogram(MCMC.m, "Normalization", "pdf")
+% MCMC results
+MCMC.mean = mean(MCMC.m, 2);
+MCMC.meanSlope      = MCMC.mean(1);
+MCMC.meanYIntercept = MCMC.mean(2);
+scatter(MCMC.m(1,1:100:end), MCMC.m(2,1:100:end), 'Marker', 'o', ...
+    'MarkerFaceColor', 'k', 'MarkerFaceAlpha', 0.2, ...
+    'MarkerEdgeColor','none', 'SizeData', 10)
 hold on
-xlimits = xlim(gca);
-xvecForDist = linspace(xlimits(1), xlimits(2), 500);
+
+%% theoretical OLS results
+
+X = [data.x, ones(ndata,1)];
+beta = [data.x, ones(ndata,1)] \ data.y;
+betaCov = inv(X'*X);
+% ellipse from OLS fit
+thetas = linspace(0, 2*pi, 100); circpoints = 2*[cos(thetas); sin(thetas)];
+cholcov = chol(betaCov, "lower"); 
+ellipsepoints = cholcov*circpoints + beta;
+plot(ellipsepoints(1,:), ellipsepoints(2,:), 'r', 'LineWidth', 2)
+plot(beta(1), beta(2), '.r', 'MarkerSize', 25)
+
+%histogram(MCMC.m(1,:), "Normalization", "pdf")
+%hold on
+%xlimits = xlim(gca);
+%xvecForDist = linspace(xlimits(1), xlimits(2), 500);
 %plot(xvecForDist, pdf("normal", xvecForDist, MCMC.mean, sqrt(1/n)), '-r', 'LineWidth', 2)
-plot(xvecForDist, ...
-    pdf("normal", xvecForDist, data.mean, sqrt(1/length(data.d))), '-g', 'LineWidth', 2)
+%plot(xvecForDist, ...
+%    pdf("normal", xvecForDist, data.mean, sqrt(1/length(data.d))), '-g', 'LineWidth', 2)
