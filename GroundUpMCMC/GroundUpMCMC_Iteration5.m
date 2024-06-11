@@ -1,19 +1,13 @@
 %% Metropolis Hastings MCMC from the ground up
 
-% 4. Generalize to an arbitrary model:
-%    synthetic data reflects true values in struct 'truth'
-%    restrict data to data vector = data, and G(m) = dhat
-%    restrict data uncertainties to covariance matrix = dcov,
-%    restrict model parameters to model vector = modelCurrent,
-%       modelProposed, and modelSamples to aggregate samples
-%    the rest of the parameters go in a struct = setup.
-%    summary stats and interpretation go in results struct
-
-% Start by reproducing linear regression case
+% 5. Add y uncertainty as model parameter to linear regression
+% try to add as an extra model parameter, not separately proposed
+% to avoid numerical instability in log(det()), use variances only
 
 %% synthetic data setup
 
 setup.ndata = 20;
+
 truth.slope = 2;
 truth.yIntercept = 4;
 truth.yUncertainty = 1; % standard deviation of normally distributed errors
@@ -23,12 +17,19 @@ rng(1) % start random number stream in one spot
 
 setup.x = random('uniform', 0, 10, [setup.ndata, 1]);
 truth.y = truth.slope * setup.x + truth.yIntercept;
-data = random('normal', 0, truth.yUncertainty, [setup.ndata, 1]) + truth.y;
-dcov = eye(setup.ndata) * truth.yUncertainty^2;
 
-modelCurrent = [setup.x, ones(setup.ndata,1)] \ data; % initial model parameter
-setup.proposalCov = [0.015 0; 0 0.3]; % proposal distribution std dev
-setup.nMC = 1e7; % number of MCMC trials
+data = random('normal', 0, truth.yUncertainty, [setup.ndata, 1]) + truth.y;
+
+
+%% initialize model parameters
+
+modelCurrent = [setup.x, ones(setup.ndata,1)] \ data; 
+noiseCurrent = var(data - [setup.x, ones(setup.ndata,1)]*modelCurrent);
+modelCurrent = [modelCurrent; noiseCurrent]; % append noise to model
+dvarCurrent = noiseCurrent * ones(setup.ndata, 1);
+
+setup.proposalCov = [0.015 0 0; 0 0.3 0; 0 0 0.5]; % proposal distribution
+setup.nMC = 1e6; % number of MCMC trials
 
 setup.nmodel = length(modelCurrent); % number of model parameters
 
@@ -50,9 +51,13 @@ for iMC = 1:setup.nMC
     dhatCurrent  = evaluateModel(modelCurrent,  setup);
     dhatProposed = evaluateModel(modelProposed, setup);
     
+    % create data covariance with current and proposed noise terms
+    dvarCurrent  = updateDataVariance(modelCurrent,  setup);
+    dvarProposed = updateDataVariance(modelProposed, setup);
+    
     % calculate log-likelihoods of current and proposed samples
-    llCurrent  = loglik(dhatCurrent,  data, dcov);
-    llProposed = loglik(dhatProposed, data, dcov);
+    llCurrent  = loglik(dhatCurrent,  data, dvarCurrent,  modelCurrent);
+    llProposed = loglik(dhatProposed, data, dvarProposed, modelProposed);
 
     % difference in log-likelihood = log(likelihood ratio)
     delta_ll = llProposed - llCurrent;
@@ -91,14 +96,6 @@ ellipsepoints = cholcov*circpoints + beta;
 plot(ellipsepoints(1,:), ellipsepoints(2,:), 'r', 'LineWidth', 2)
 plot(beta(1), beta(2), '.r', 'MarkerSize', 25)
 
-%histogram(MCMC.m(1,:), "Normalization", "pdf")
-%hold on
-%xlimits = xlim(gca);
-%xvecForDist = linspace(xlimits(1), xlimits(2), 500);
-%plot(xvecForDist, pdf("normal", xvecForDist, MCMC.mean, sqrt(1/n)), '-r', 'LineWidth', 2)
-%plot(xvecForDist, ...
-%    pdf("normal", xvecForDist, data.mean, sqrt(1/length(data.d))), '-g', 'LineWidth', 2)
-
 
 %% evaluate this particular model
 
@@ -109,13 +106,29 @@ function dhat = evaluateModel(m, setup)
 
 end % function evaluateModel
 
+
+%% update data covariance matrix
+
+function dvar = updateDataVariance(m, setup)
+
+    dvar = m(3) * ones(setup.ndata, 1);
+
+end % updateDataCovariance
+
+
 %% calculate log-likelihood (including -1/2 term)
 % ignore constant terms (for now)
 
-function ll = loglik(dhat, data, dcov)
+function ll = loglik(dhat, data, dvar, m)
+    
+    % enforce bounds on model prior
+    if m(3) <= 0
+        ll = -Inf;
+        return
+    end
 
     residuals = (data - dhat);
-    chiSqTerms = residuals.^2 ./ diag(dcov);
-    ll = -1/2 * sum(chiSqTerms);
+    chiSqTerms = residuals.^2 ./ dvar;
+    ll = -1/2 * sum(chiSqTerms) - 1/2 * sum(log(dvar));
 
 end % function loglik
