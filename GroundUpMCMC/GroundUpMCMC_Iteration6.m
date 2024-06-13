@@ -1,16 +1,14 @@
 %% Metropolis Hastings MCMC from the ground up
 
-% 5. Add y uncertainty as model parameter to linear regression
-% try to add as an extra model parameter, not separately proposed
-% to avoid numerical instability in log(det()), use variances only
+% 6. Performance improvements, add seive and data plot
 
 %% synthetic data setup
 
-setup.ndata = 50;
+setup.ndata = 500;
 
 truth.slope = 2;
 truth.yIntercept = 4;
-truth.yUncertainty = 1; % standard deviation of normally distributed errors
+truth.yUncertainty = 10; % standard deviation of normally distributed errors
 truth.model = [truth.slope; truth.yIntercept]; % slope, y-intercept
 
 rng(1) % start random number stream in one spot
@@ -21,26 +19,39 @@ truth.y = truth.slope * setup.x + truth.yIntercept;
 data = random('normal', 0, truth.yUncertainty, [setup.ndata, 1]) + truth.y;
 
 
-%% initialize model parameters
+%% initialize model parameters and likelihoods
 
-modelCurrent = [setup.x, ones(setup.ndata,1)] \ data; 
-noiseCurrent = var(data - [setup.x, ones(setup.ndata,1)]*modelCurrent);
-modelCurrent = [modelCurrent; noiseCurrent]; % append noise to model
+% some maximum likelihood calculations to get close
+X = [setup.x, ones(setup.ndata,1)];
+beta = X \ data; % maximum likelihood solution of model parameters
+noiseMean = var(data - [setup.x, ones(setup.ndata,1)]*beta);
+betaCov = noiseMean * inv(X'*X);
+noiseVariance = 2*noiseMean^2/(setup.ndata - 1);
+
+modelCurrent = [beta; noiseMean];
+noiseCurrent = noiseMean;
+
+% initialize data variance vector, dhat vector, and log-likelihood
 dvarCurrent = noiseCurrent * ones(setup.ndata, 1);
+dhatCurrent = evaluateModel(modelCurrent, setup);
+llCurrent = loglik(dhatCurrent, data, dvarCurrent, modelCurrent);
 
-setup.proposalCov = [0.0012 0 0; 0 0.04 0; 0 0 0.025]; % proposal distribution
+setup.proposalCov = blkdiag(betaCov, noiseVariance);
 setup.nMC = 1e6; % number of MCMC trials
+setup.seive = 10;
 
 setup.nmodel = length(modelCurrent); % number of model parameters
 
 
 %%
 
-modelSamples = nan([setup.nmodel, setup.nMC], "double");
+modelSamples = nan([setup.nmodel, setup.nMC/setup.seive], "double");
 for iMC = 1:setup.nMC
 
     % save off current model
-    modelSamples(:, iMC) = modelCurrent;
+    if ~mod(iMC,setup.seive)
+        modelSamples(:, iMC/setup.seive) = modelCurrent;
+    end
     
     % propose a new model
     modelProposed = modelCurrent + ...
@@ -48,15 +59,12 @@ for iMC = 1:setup.nMC
                             setup.proposalCov )';
 
     % calculate residuals for old and new models
-    dhatCurrent  = evaluateModel(modelCurrent,  setup);
     dhatProposed = evaluateModel(modelProposed, setup);
     
     % create data covariance with current and proposed noise terms
-    dvarCurrent  = updateDataVariance(modelCurrent,  setup);
     dvarProposed = updateDataVariance(modelProposed, setup);
     
     % calculate log-likelihoods of current and proposed samples
-    llCurrent  = loglik(dhatCurrent,  data, dvarCurrent,  modelCurrent);
     llProposed = loglik(dhatProposed, data, dvarProposed, modelProposed);
 
     % difference in log-likelihood = log(likelihood ratio)
@@ -68,18 +76,28 @@ for iMC = 1:setup.nMC
     % keep the proposed model with probability = keep
     if keep > rand(1) % if we're keeping the proposed model
 
-        modelCurrent = modelProposed; % the proposed model becomes the current one
+        % the proposed model becomes the current one
+        modelCurrent = modelProposed; 
+        dhatCurrent = dhatProposed;
+        dvarCurrent = dvarProposed;
+        llCurrent  = llProposed;
 
     end % if keep
 
 
 end % for iMC = 1:nMC
 
-% MCMC results
+%% MCMC results
+
 results.mean = mean(modelSamples, 2);
 results.meanSlope      = results.mean(1);
 results.meanYIntercept = results.mean(2);
-scatter(modelSamples(1,1:100:end), modelSamples(2,1:100:end), 'Marker', 'o', ...
+% correlation plot
+figure('Position', [50, 50, 800, 600])
+plotmatrix(modelSamples')
+
+figure('Position', [900 50, 700, 600])
+scatter(modelSamples(1,:), modelSamples(2,:), 'Marker', 'o', ...
     'MarkerFaceColor', 'k', 'MarkerFaceAlpha', 0.2, ...
     'MarkerEdgeColor','none', 'SizeData', 10)
 hold on
@@ -87,9 +105,10 @@ hold on
 
 %% theoretical OLS results
 
+% repeated from initialization routine
 X = [setup.x, ones(setup.ndata,1)];
 beta = X \ data;
-betaCov = inv(X'*X);
+betaCov = var(data - [setup.x, ones(setup.ndata,1)]*beta) * inv(X'*X);
 
 % ellipse from OLS fit
 thetas = linspace(0, 2*pi, 100); circpoints = 2*[cos(thetas); sin(thetas)];
@@ -97,6 +116,22 @@ cholcov = chol(betaCov, "lower");
 ellipsepoints = cholcov*circpoints + beta;
 plot(ellipsepoints(1,:), ellipsepoints(2,:), 'r', 'LineWidth', 2)
 plot(beta(1), beta(2), '.r', 'MarkerSize', 25)
+
+%% plot data and sample fits
+figure('Position', [20, 20, 1200, 1000])
+xmin = -1;
+xmax = 11;
+
+nlines = 1e3;
+
+linesymin = modelSamples(1,1:nlines)*xmin + modelSamples(2,1:nlines);
+linesymax = modelSamples(1,1:nlines)*xmax + modelSamples(2,1:nlines);
+
+line([xmin; xmax], [linesymin; linesymax], 'Color', [0.8500 0.3250 0.0980, 0.05])
+hold on
+plot(setup.x, data, '.', 'MarkerSize', 20, 'MarkerEdgeColor', 'k')
+hax = gca;
+set(hax, 'FontSize', 24)
 
 
 %% evaluate this particular model
