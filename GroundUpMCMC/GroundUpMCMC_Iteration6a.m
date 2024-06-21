@@ -12,7 +12,7 @@ dvar = data1s.^2;
 
 setup.ndata = length(data);
 
-rng(1) % start random number stream in one spot
+%rng(1) % start random number stream in one spot
 
 
 %% initialize model parameters and likelihoods
@@ -39,7 +39,7 @@ dhatCurrent = evaluateModel(modelCurrent);
 llCurrent = loglik(dhatCurrent, data, dvar, modelCurrent);
 
 setup.proposalCov = 5*eye(5);
-setup.nMC = 1e6; % number of MCMC trials
+setup.nMC = 1e7; % number of MCMC trials
 setup.seive = 10;
 
 setup.nmodel = length(modelCurrent); % number of model parameters
@@ -89,7 +89,7 @@ for iMC = 1:setup.nMC
 
 end % for iMC = 1:nMC
 
-plotmatrix(modelSamples')
+
 
 
 
@@ -139,17 +139,24 @@ plotmatrix(modelSamples')
 % hax = gca;
 % set(hax, 'FontSize', 24)
 
+figure
+plotmatrix(modelSamples')
 
-datehat = [modelSamples(1,:);
-           modelSamples(1,:) - modelSamples(2,:);
-           modelSamples(1,:) - modelSamples(2,:) - modelSamples(3,:);
-           modelSamples(1,:) - modelSamples(2,:) - modelSamples(3,:) - modelSamples(4,:);
-           modelSamples(1,:) - modelSamples(2,:) - modelSamples(3,:) - modelSamples(4,:) - modelSamples(5,:)];
+datehat = modelSamples(1,:) - ...
+    cumsum( [zeros(1, setup.nMC/setup.seive); ...
+             modelSamples(2:end,:)]...
+          );
+figure
+plotmatrix(datehat')
 
 lb = datehat(2,:); % noPlat
 ub = datehat(3,:); % PAM-2F
 fracDist = rand(1, size(datehat,2));
 WLB = lb - fracDist .* (lb - ub);
+
+meanDates = mean(datehat,2);
+
+% what's the probability that a dataset 
 
 %% evaluate this particular model
 

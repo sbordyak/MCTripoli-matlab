@@ -1,34 +1,38 @@
 %% Metropolis Hastings MCMC from the ground up
 
-% 6. Performance improvements, add seive and data plot
+% 6b. Try a 2D mean problem
+% parameterize the covariance matrix as LCL factorization elements
+% so, m(1) = x
+% and m(2) = y
+% and cov(x,y) = [1 0; m(5) 1]*[m(3) 0; 0 m(4)]*[1 0; m(5) 1]'
+% constraint m(3) > 0 and m(4) > 0 (positive definite)
 
 %% synthetic data setup
 
 setup.ndata = 200;
 
-truth.slope = 2;
-truth.yIntercept = 4;
-truth.yUncertainty = 1; % standard deviation of normally distributed errors
-truth.model = [truth.slope; truth.yIntercept; truth.yUncertainty^2];
+truth.meanx = 1;
+truth.meany = 3;
+truth.covmat = [2 1; 1 2]; % standard deviation of normally distributed errors
+% [2 1; 1 2] = [1 0; 0.5 1]*[2 0; 0 1.5]*[1 0; 0.5 1]'
+truth.model = [1, 3, 2, 1.5, 0.5];
 
 rng(1) % start random number stream in one spot
 
-setup.x = random('uniform', 0, 10, [setup.ndata, 1]);
-truth.y = truth.slope * setup.x + truth.yIntercept;
-
-data = random('normal', 0, truth.yUncertainty, [setup.ndata, 1]) + truth.y;
+data.xy = mvnrnd([truth.meanx; truth.meany], truth.covmat, setup.ndata);
+data.vec = data.xy(:);
 
 
 %% initialize model parameters and likelihoods
 
 % some maximum likelihood calculations to get close
-X = [setup.x, ones(setup.ndata,1)];
-beta = X \ data; % maximum likelihood solution of model parameters
-noiseMean = var(data - [setup.x, ones(setup.ndata,1)]*beta);
+X = blkdiag(ones(setup.ndata,1), ones(setup.ndata,1));
+beta = X \ data.vec; % maximum likelihood solution of model parameters
+noiseMean = var(data - X*beta);
 betaCov = noiseMean * inv(X'*X);
 noiseVariance = 2*noiseMean^2/(setup.ndata - 1);
 
-modelCurrent = [beta; noiseMean];
+modelCurrent = [beta; noiseMean] + [1;1;1];
 noiseCurrent = noiseMean;
 
 % initialize data variance vector, dhat vector, and log-likelihood
@@ -37,8 +41,8 @@ dhatCurrent = evaluateModel(modelCurrent, setup);
 llCurrent = loglik(dhatCurrent, data, dvarCurrent, modelCurrent);
 
 setup.proposalCov = blkdiag(betaCov, noiseVariance);
-setup.nMC = 1e7; % number of MCMC trials
-setup.seive = 20;
+setup.nMC = 1e6; % number of MCMC trials
+setup.seive = 10;
 
 setup.nmodel = length(modelCurrent); % number of model parameters
 
