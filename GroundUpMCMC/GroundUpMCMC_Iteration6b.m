@@ -19,20 +19,30 @@ truth.model = [1, 3, 2, 1.5, 0.5];
 
 rng(1) % start random number stream in one spot
 
-data.xy = mvnrnd([truth.meanx; truth.meany], truth.covmat, setup.ndata);
-data.vec = data.xy(:);
+data.xy = mvnrnd([truth.meanx; truth.meany], truth.covmat, setup.ndata)';
+data.vec = data.xy(:); %[x1 y1 x2 y2 x3 y3 ...]';
+
+% data covariance matrix
+Sd = repmat({truth.covmat}, setup.ndata, 1);
+data.cov = sparse(blkdiag(Sd{:}));
+data.covinv = inv(data.cov);
+data.vecw = chol(data.covinv)*data.vec; 
+clear Sd
 
 
 %% initialize model parameters and likelihoods
 
 % some maximum likelihood calculations to get close
-X = blkdiag(ones(setup.ndata,1), ones(setup.ndata,1));
-beta = X \ data.vec; % maximum likelihood solution of model parameters
+X = repmat(eye(2), setup.ndata, 1);
+Xw = chol(data.covinv)*X;
+beta = Xw \ data.vecw; % maximum likelihood solution of model parameters
+r = data.vec -  X*beta;
+
 noiseMean = var(data - X*beta);
-betaCov = noiseMean * inv(X'*X);
+betaCov = noiseMean * inv(Xw'*Xw);
 noiseVariance = 2*noiseMean^2/(setup.ndata - 1);
 
-modelCurrent = [beta; noiseMean] + [1;1;1];
+modelCurrent = [beta; noiseMean];
 noiseCurrent = noiseMean;
 
 % initialize data variance vector, dhat vector, and log-likelihood
