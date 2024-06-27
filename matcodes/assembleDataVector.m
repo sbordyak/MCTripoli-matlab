@@ -12,21 +12,21 @@ function [d, data] = assembleDataVector(data,method)
 %   data/method matrices and indices so that columns line up with columns.
 detNamesFromMethod = string(method.OPTable.Properties.VariableNames);
 detNamesFromData = data.collectorNames;
-[detectorNamesInData, detectorIndicesInData] = ...
+[~, detectorIndicesInData] = ...
     intersect(detNamesFromData, detNamesFromMethod, 'stable');
-[detectorNamesInMethod, detectorIndicesInMethod] = ...
+[~, detectorIndicesInMethod] = ...
     intersect(detNamesFromMethod, detNamesFromData, 'stable');
 
 BLTable = method.BLTable{:,detectorIndicesInMethod};
-sequenceTable_isotopeIndices = method.F_ind(:,detectorIndicesInMethod) ;
+sequenceTableWithSpeciesIndices = method.F_ind(:,detectorIndicesInMethod);
 data.BLmatrix = data.BLmatrix(:,detectorIndicesInData);
 data.OPmatrix = data.OPmatrix(:,detectorIndicesInData);
+data.CollectorTable = data.CollectorTable(detectorIndicesInData,:);
 
-% count OP = on peak sequences, number of detectors used
-nOPseq = size(sequenceTable_isotopeIndices,1);
-nDet = size(sequenceTable_isotopeIndices,2);
 
-% determine baseline references
+%% determine baseline references
+
+nOPseq = size(sequenceTableWithSpeciesIndices,1);
 BLdetIsRef = zeros(size(BLTable)); % true if baseline int is referenced
 for iOPseq = 1:nOPseq
 
@@ -36,17 +36,32 @@ for iOPseq = 1:nOPseq
     BLrefs = double(extractAfter(split(refString, ", "), "BL"));
 
     % make a flag for the BLTable with which intensities are used
-    detInSeq = sequenceTable_isotopeIndices(iOPseq,:) > 0;
+    detInSeq = sequenceTableWithSpeciesIndices(iOPseq,:) > 0;
     BLdetIsRef(BLrefs, :) = BLdetIsRef(BLrefs, :) | detInSeq;
 
 end
-OPdetIsRef = sequenceTable_isotopeIndices > 0; % true if OP int is referenced
+OPdetIsRef = sequenceTableWithSpeciesIndices > 0; % true if OP int is referenced
 
 
 %% make masks for BL and OP data used in inversion
 
 BLdataIsRef = logical(BLdetIsRef(data.BLSeqIdx,:));
 OPdataIsRef = logical(OPdetIsRef(data.OPSeqIdx,:));
+
+
+%% calcalute detector-specific parameters indexed to detector
+
+
+% pull detector properties from CollectorTable at top of data file
+isDetectorFaraday = data.CollectorTable(:,2) == "F";
+detectorResistance = double(data.CollectorTable(:,3));
+
+% calculate conversion from cps to volts 
+ionsPerCoulomb = 6241509074460762607.776;
+cpsPerVolt = ionsPerCoulomb ./ detectorResistance;
+
+cpsConversionFactor = 1 .* not(isDetectorFaraday) + ...
+    cpsPerVolt .* isDetectorFaraday;
 
 
 %% assemble baseline data into data vector/struct
@@ -63,11 +78,13 @@ d.block = []; % block index
 d.cycle = [];
 d.isOP  = false(0); % is data point an OP measurement?
 
+nDet = size(sequenceTableWithSpeciesIndices,2);
+
 for iDet = 1:nDet
 
     detRefs = BLdataIsRef(:,iDet); % where is this detector refd in BL?
     nrefs   = sum(detRefs);
-    d.int   = [d.int; data.BLmatrix(detRefs, iDet)];
+    d.int   = [d.int; data.BLmatrix(detRefs, iDet)*cpsConversionFactor(iDet)];
     d.time  = [d.time; data.BLtime(detRefs)];
     d.det   = [d.det; iDet*ones(nrefs,1)];
     BLseqs  = data.BLSeqIdx(detRefs); % BL seqs referenced
@@ -83,17 +100,17 @@ end
 
 %% append on-peak data onto d vector/struct
 
-for iDet = 1:nDet  % Avoid PM, start at 2
+for iDet = 1:nDet
 
     detRefs = OPdataIsRef(:,iDet); % where is this detector refd in F_ind?
     nrefs   = sum(detRefs);
-    d.int   = [d.int; data.OPmatrix(detRefs, iDet)];
+    d.int   = [d.int; data.OPmatrix(detRefs, iDet)*cpsConversionFactor(iDet)];
     d.time  = [d.time; data.OPtime(detRefs)];
     d.det   = [d.det; iDet*ones(nrefs,1)];
     OPseqs  = data.OPSeqIdx(detRefs); % OP seqs referenced
     d.seq   = [d.seq; OPseqs];
     d.mass  = [d.mass; method.OPMasses{ OPseqs, iDet }];
-    d.iso   = [d.iso; sequenceTable_isotopeIndices(OPseqs,iDet)];
+    d.iso   = [d.iso; sequenceTableWithSpeciesIndices(OPseqs,iDet)];
     d.block = [d.block; data.OPserial(detRefs, 1)];
     d.cycle = [d.cycle; data.OPserial(detRefs, 2)];
     d.isOP  = [d.isOP; true(nrefs,1)];
