@@ -57,7 +57,7 @@ const.T = 290; % temperature, Kelvin
 const.ionsPerCoulomb = 6241509074460762607.776;
 
 % user inputs: mass spec and method
-massSpec.R = [1e12, 1e12];
+massSpec.R = [1e11, 1e11];
 massSpec.detectorTypes = ["F", "F"]; % "F" or "IC"
 
 method.integrationTime = 0.1; % seconds of ion beam integration per data point
@@ -65,7 +65,7 @@ method.totalTime = 100; % seconds
 method.outputFormat = ["Volts", "Volts"]; % "Volts" or "CPS"
 
 % user inputs: ion beam behavior and sample properties (model parameters) 
-ionBeam.monitorBeamIntensityFunctionCPS = @(t) 0e6 * ones(size(t)); % cps
+ionBeam.monitorBeamIntensityFunctionCPS = @(t) 1e6 * ones(size(t)); % cps
 ionBeam.relativeAbundances = [2, 1]; % monitor beam has abundance = 1
 
 
@@ -87,7 +87,7 @@ massSpec.voltsPerCPS = massSpec.R/const.ionsPerCoulomb;
 massSpec.detectorTypes = categorical(massSpec.detectorTypes, ["F", "IC"]);
 
 % calculate ion beam intensity and total counts for each integration
-% This is the model.  Currently: 
+% this is the model.  Currently: 
 ionBeam.intensityInCPS = ionBeam.monitorBeamIntensityFunctionCPS(method.times);
 ionBeam.countsPerIntegration = ionBeam.intensityInCPS .* ...
     method.integrationTimeVector .* ionBeam.relativeAbundances;
