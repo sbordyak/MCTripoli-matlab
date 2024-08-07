@@ -14,7 +14,7 @@ function ionBeamVariance = ...
 %       - gain = eg 1 or 0.9
 %
 %   Output:
-%   - ionBeam: vector of estimated variances 
+%   - ionBeamVariance: vector of estimated variances in cps^2
 
 %% Constants
 
@@ -23,22 +23,18 @@ T = 290; % temperature, Kelvin
 R = detector.resistance; % 1e11; % resistance, ohms
 
 ionsPerCoulomb = 6241509074460762607.776;
-
+CPSperVolt = ionsPerCoulomb/R;
 
 %% Johnson noise
 
 deltaf = 1./integrationTimes; % bandwidth in Hertz = 1/integration time
 JNvarianceInVolts = 4*kB*T*R*deltaf; % volts^2
-
+JNvarianceInCPS = JNvarianceInVolts * (CPSperVolt)^2;
 
 %% Shot noise
 
-voltsPerCPS = R/ionsPerCoulomb;
-intensityInVolts = countRates * voltsPerCPS;
-
 % Poisson variance = total ions = counts/second * seconds
-PoissonVarianceInCPS = countRates .* integrationTimes; % counts^2
-PoissonVarianceInVolts = voltsPerCPS^2 * PoissonVarianceInCPS;
+PoissonVarianceInCPS =(countRates*detector.gain) ./ integrationTimes; % counts^2
 
 
 %% Create output
@@ -46,13 +42,13 @@ PoissonVarianceInVolts = voltsPerCPS^2 * PoissonVarianceInCPS;
 if detector.type == "F"
     % noise is shot noise + Johnson noise
     % output is in volts
-    ionBeamVariance = JNvarianceInVolts + PoissonVarianceInVolts;
+    ionBeamVariance = JNvarianceInCPS + PoissonVarianceInCPS;
 
 elseif detector.type == "IC"
     % noise is shot noise only
     % output is in cps
     
-    ionBeamVariance = PoissonVarianceInCPS * detector.gain;
+    ionBeamVariance = PoissonVarianceInCPS;
 
 else % 
     error("unrecognized detector type, use F or IC")
