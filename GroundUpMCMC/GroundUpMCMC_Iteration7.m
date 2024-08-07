@@ -14,7 +14,7 @@ setup.BLIntegrationTimes = ones(setup.nBLIntegrations,1);
 setup.OPIntegrationTimes = ones(setup.nOPIntegrations,1);
 
 % true parameters for simulated data
-truth.lograb = log(2);   % log(a/b)
+truth.lograb = log(0.5);   % log(a/b)
 truth.logCb = log(1e6);  % log(Cb) log(current of isotope b)
 truth.ref1 = -1e2; % detector 1, cps
 truth.ref2 =  2e2; % detector 2, cps
@@ -26,28 +26,28 @@ truth.cb = exp(truth.logCb) + truth.ref2;
 rng(2) % start random number stream in one spot
 
 % generate random BL and OP data, assemble into data vector
-data.BL1 = ...
+data.BL_det1 = ...
     simulateIonBeam(truth.ref1, ...
         setup.BLIntegrationTimes, ...
         setup.detector);
 
-data.BL2 = ...
+data.BL_det2 = ...
     simulateIonBeam(truth.ref2, ...
         setup.BLIntegrationTimes, ...
         setup.detector);
 
-data.OP1 = ...
+data.OP_det1 = ...
     simulateIonBeam(truth.ca, ...
         setup.OPIntegrationTimes, ...
         setup.detector);
 
-data.OP2 = ...
+data.OP_det2 = ...
     simulateIonBeam(truth.cb, ...
         setup.OPIntegrationTimes, ...
         setup.detector);
 
 % data vector of measured intensities
-data.int = [data.BL1; data.BL2; data.OP1; data.OP2];
+data.int = [data.BL_det1; data.BL_det2; data.OP_det1; data.OP_det2];
 
 % data flags for data.int
 
@@ -67,21 +67,42 @@ data.iso = [zeros(2*setup.nBLIntegrations,1);
             2*ones(setup.nOPIntegrations,1)];
 
 
-%% Solve least squares problem to initialize model parameters
+%% Solve maximum likelihood problem to initialize model parameters
 
 isIsotopeA = data.iso == 1;
 isIsotopeB = data.iso == 2;
 rough.lograb = mean(log(data.int(isIsotopeA)./data.int(isIsotopeB)));
 rough.logCb = max(1, mean(real(log(data.int(isIsotopeB)))));
 
-inBL1 = ~data.isOP & data.det == 1;
-inBL2 = ~data.isOP & data.det == 2;
-rough.ref1 = mean(data.int(inBL1));
-rough.ref2 = mean(data.int(inBL2));
+inBL_det1 = ~data.isOP & data.det == 1;
+inBL_det2 = ~data.isOP & data.det == 2;
+rough.ref1 = mean(data.int(inBL_det1));
+rough.ref2 = mean(data.int(inBL_det2));
 
 m0 = [rough.lograb; rough.logCb; rough.ref1; rough.ref2];
-[modelCurrent, llCurrent] = fminunc(@(m) -loglikLeastSquares(m, data, setup), m0);
+[modelCurrent, negLogLik] = fminunc(@(m) -loglikLeastSquares(m, data, setup), m0);
+llCurrent = -negLogLik;
+dvarCurrent = updateDataVariance(modelCurrent, setup);
 
+% build Jacobian matrix
+% derivatives of [BL_det1, BL_det2, OP_det1, OP_det2]
+% with respect to [log(a/b), log(Cb), ref1, ref2]
+G = zeros(length(data.int), 4);
+
+% derivative of ca wrt log(a/b)
+G(isIsotopeA, 1) = exp(modelCurrent(1)+modelCurrent(2));
+
+% derivative of ca wrt log(Cb)
+G(isIsotopeA, 2) = exp(modelCurrent(1)+modelCurrent(2));
+
+% derivative of cb wrt log(Cb)
+G(isIsotopeB, 2) = exp(modelCurrent(2));
+
+G(data.det == 1, 3) = 1; % derivative wrt ref1
+G(data.det == 2, 4) = 1; % derivative wrt ref2
+
+% least squares covariance matrix
+CM = inv(G'*diag(1./dvarCurrent)*G);
 
 
 %% initialize model parameters and likelihoods
@@ -211,12 +232,12 @@ function dhat = evaluateModel(m, setup)
     ref1   = m(3);
     ref2   = m(4);
 
-    BL1 = ref1*ones(setup.nBLIntegrations,1);
-    BL2 = ref2*ones(setup.nBLIntegrations,1);
-    OP1 = exp(lograb + logCb) + ref1;
-    OP2 = exp(logCb) + ref2;
+    BL_det1 = ref1*ones(setup.nBLIntegrations,1);
+    BL_det2 = ref2*ones(setup.nBLIntegrations,1);
+    OP_det1 = exp(lograb + logCb) + ref1;
+    OP_det2 = exp(logCb) + ref2;
 
-    dhat = [BL1; BL2; OP1; OP2];
+    dhat = [BL_det1; BL_det2; OP_det1; OP_det2];
 
 end % function evaluateModel
 
@@ -229,24 +250,24 @@ function dvar = updateDataVariance(m, setup)
     lograb = m(1);
     logCb = m(2);
 
-    BL1var = estimateIonBeamVariance(...
+    BL_det1_var = estimateIonBeamVariance(...
         zeros(setup.nBLIntegrations,1), ...
         setup.BLIntegrationTimes, ...
         setup.detector);
-    BL2var = estimateIonBeamVariance(...
+    BL_det2_var = estimateIonBeamVariance(...
         zeros(setup.nBLIntegrations,1), ...
         setup.BLIntegrationTimes, ...
         setup.detector);
-    OP1var = estimateIonBeamVariance(...
+    OP_det1_var = estimateIonBeamVariance(...
         exp(lograb + logCb), ...
         setup.BLIntegrationTimes, ...
         setup.detector);
-    OP2var = estimateIonBeamVariance(...
+    OP_det2_var = estimateIonBeamVariance(...
         exp(logCb), ...
         setup.BLIntegrationTimes, ...
         setup.detector);
 
-    dvar = [BL1var; BL2var; OP1var; OP2var];
+    dvar = [BL_det1_var; BL_det2_var; OP_det1_var; OP_det2_var];
 
 end % updateDataCovariance
 
