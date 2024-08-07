@@ -34,8 +34,9 @@ JNvarianceInCPS = JNvarianceInVolts * (CPSperVolt)^2;
 
 %% Shot noise
 
-% Poisson variance = total ions = counts/second * seconds
-PoissonVarianceInCPS = (countRates*detector.gain) ./ integrationTimes; % counts^2
+% Poisson variance = total ions = (counts per second) / seconds
+% units of cps^2
+PoissonVarianceInCPS = (trueCountRates*detector.gain) ./ integrationTimes; 
 
 
 %% Create output

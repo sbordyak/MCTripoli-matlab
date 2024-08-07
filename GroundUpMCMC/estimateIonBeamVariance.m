@@ -1,5 +1,5 @@
 function ionBeamVariance = ...
-    estimateIonBeamVariance(countRates, integrationTimes, detector)
+    estimateIonBeamVariance(trueCountRates, integrationTimes, detector)
 %ESTIMATEIONBEAMVARIANCE Estimate ion beam variance
 %   Estimate the ion beam variance based on mass spec properties.
 %   Noise is the sum shot noise and, if Farday output is selected, 
@@ -34,7 +34,7 @@ JNvarianceInCPS = JNvarianceInVolts * (CPSperVolt)^2;
 %% Shot noise
 
 % Poisson variance = total ions = counts/second * seconds
-PoissonVarianceInCPS =(countRates*detector.gain) ./ integrationTimes; % counts^2
+PoissonVarianceInCPS =(trueCountRates*detector.gain) ./ integrationTimes; % counts^2
 
 
 %% Create output
