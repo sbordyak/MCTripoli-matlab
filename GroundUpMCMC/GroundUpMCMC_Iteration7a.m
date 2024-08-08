@@ -1,6 +1,7 @@
 %% Metropolis Hastings MCMC from the ground up
 
 % 7. Simplified (model 1) mass spectrometer data
+% 7a. Add multiple chains for QAQC
 
 %% synthetic data setup
 
@@ -14,7 +15,7 @@ setup.BLIntegrationTimes = ones(setup.nBLIntegrations,1);
 setup.OPIntegrationTimes = ones(setup.nOPIntegrations,1);
 
 % true parameters for simulated data
-truth.lograb = log(0.03);   % log(a/b)
+truth.lograb = log(0.03);   % log(a/b), with (a/b) < 1 preferred
 truth.logCb = log(1e6);  % log(Cb) log(current of isotope b)
 truth.ref1 = -1e2; % detector 1, cps
 truth.ref2 =  2e2; % detector 2, cps
@@ -80,10 +81,10 @@ rough.ref1 = mean(data.int(inBL_det1));
 rough.ref2 = mean(data.int(inBL_det2));
 
 m0 = [rough.lograb; rough.logCb; rough.ref1; rough.ref2];
-[modelCurrent, negLogLik] = fminunc(@(m) -loglikLeastSquares(m, data, setup), m0);
-llCurrent = -negLogLik;
-dvarCurrent = updateDataVariance(modelCurrent, setup);
-dhatCurrent = evaluateModel(modelCurrent, setup);
+[modelInitial, negLogLik] = fminunc(@(m) -loglikLeastSquares(m, data, setup), m0);
+llInitial = -negLogLik;
+dvarCurrent = updateDataVariance(modelInitial, setup);
+dhatCurrent = evaluateModel(modelInitial, setup);
 
 % build Jacobian matrix
 % derivatives of [BL_det1, BL_det2, OP_det1, OP_det2]
@@ -91,13 +92,13 @@ dhatCurrent = evaluateModel(modelCurrent, setup);
 G = zeros(length(data.int), 4);
 
 % derivative of ca wrt log(a/b)
-G(isIsotopeA, 1) = exp(modelCurrent(1)+modelCurrent(2));
+G(isIsotopeA, 1) = exp(modelInitial(1)+modelInitial(2));
 
 % derivative of ca wrt log(Cb)
-G(isIsotopeA, 2) = exp(modelCurrent(1)+modelCurrent(2));
+G(isIsotopeA, 2) = exp(modelInitial(1)+modelInitial(2));
 
 % derivative of cb wrt log(Cb)
-G(isIsotopeB, 2) = exp(modelCurrent(2));
+G(isIsotopeB, 2) = exp(modelInitial(2));
 
 G(data.det == 1, 3) = 1; % derivative wrt ref1
 G(data.det == 2, 4) = 1; % derivative wrt ref2
@@ -113,27 +114,42 @@ setup.proposalCov = CM;
 setup.nMC = 1e6; % number of MCMC trials
 setup.seive = 20;
 
-setup.nmodel = length(modelCurrent); % number of model parameters
+setup.nmodel = length(modelInitial); % number of model parameters
 
 
 %% Test 1: perturb modelCurrent to ensure convergence
 % perturb modelCurrent by setup.perturbation standard deviations
 
 setup.perturbation = 0;
-modelCurrent = modelCurrent + setup.perturbation*randn(4,1).*sqrt(diag(CM));
-dhatCurrent = evaluateModel(modelCurrent, setup);
-dvarCurrent = updateDataVariance(modelCurrent, setup);
+modelInitial = modelInitial + setup.perturbation*randn(4,1).*sqrt(diag(CM));
+dhatCurrent = evaluateModel(modelInitial, setup);
+dvarCurrent = updateDataVariance(modelInitial, setup);
 llCurrent = loglik(dhatCurrent, data, dvarCurrent);
 
+%% Set up multiple chains
+
+setup.nChains = 10;
+nSavedModels = setup.nMC/setup.seive;
+modelChains  = nan([setup.nmodel, nSavedModels, setup.nChains], "double");
+loglikChains = nan([1, nSavedModels, setup.nChains], "double");
+
+parfor iChain = 1:setup.nChains
+
+modelCurrent = modelInitial;
+llCurrent = llInitial;
 
 %% MCMC
 
-modelSamples = nan([setup.nmodel, setup.nMC/setup.seive], "double");
+outputModels = nan([setup.nmodel, setup.nMC/setup.seive], "double");
+outputLogLiks = nan([1, setup.nMC/setup.seive], "double");
+
 for iMC = 1:setup.nMC
 
     % save off current model
     if ~mod(iMC,setup.seive)
-        modelSamples(:, iMC/setup.seive) = modelCurrent;
+        outputIndex = iMC/setup.seive;
+        outputModels(:, outputIndex) = modelCurrent;
+        outputLogLiks(outputIndex) = llCurrent;
     end
     
     % propose a new model
@@ -168,18 +184,37 @@ for iMC = 1:setup.nMC
 
 end % for iMC = 1:nMC
 
+modelChains(:,:,iChain) = outputModels;
+loglikChains(:,:,iChain) = outputLogLiks;
+
+end % parfor iChain = 1:nChains
+
+
 %% MCMC results
 
-% convert logratio and log-intensity to ratio and intensity
-outputSamples = modelSamples;
-outputSamples(1:2,:) = exp(outputSamples(1:2,:)); % for ratio and intensity
-
-results.mean = mean(outputSamples, 2);
-% results.meanSlope      = results.mean(1);
-% results.meanYIntercept = results.mean(2);
-% correlation plot
+setup.burnin = 500;
+firstChain = modelChains(:,:,1);
+postBurnInModels = firstChain(:,setup.burnin+1:end,:);
+postBurnInModels(1:2,:) = exp(postBurnInModels(1:2,:));
 figure('Position', [50, 50, 800, 600])
-plotmatrix(outputSamples')
+plotmatrix(postBurnInModels')
+
+
+
+
+% setup.burnin = 500;
+% 
+% % convert logratio and log-intensity to ratio and intensity
+% outputModels = squeeze(outputModels);
+% outputModels = outputModels(:,setup.burnin+1:end,:);
+% outputModels(1:2,:) = exp(outputModels(1:2,:)); % for ratio and intensity
+% 
+% results.mean = mean(outputModels, 2);
+% % results.meanSlope      = results.mean(1);
+% % results.meanYIntercept = results.mean(2);
+% % correlation plot
+% figure('Position', [50, 50, 800, 600])
+% plotmatrix(outputModels')
 
 % figure('Position', [900 50, 700, 600])
 % scatter(modelSamples(1,:), modelSamples(2,:), 'Marker', 'o', ...
