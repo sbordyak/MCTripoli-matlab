@@ -5,8 +5,8 @@
 %% synthetic data setup
 
 % parameters for simulated measurement
-setup.nBLIntegrations = 100;
-setup.nOPIntegrations = 100;
+setup.nBLIntegrations = 1e2;
+setup.nOPIntegrations = 1e2;
 setup.detector.type = "F";
 setup.detector.resistance = 1e11;
 setup.detector.gain = 1;
@@ -14,7 +14,7 @@ setup.BLIntegrationTimes = ones(setup.nBLIntegrations,1);
 setup.OPIntegrationTimes = ones(setup.nOPIntegrations,1);
 
 % true parameters for simulated data
-truth.lograb = log(0.5);   % log(a/b)
+truth.lograb = log(0.03);   % log(a/b)
 truth.logCb = log(1e6);  % log(Cb) log(current of isotope b)
 truth.ref1 = -1e2; % detector 1, cps
 truth.ref2 =  2e2; % detector 2, cps
@@ -23,7 +23,7 @@ truth.model = [truth.lograb; truth.logCb; truth.ref1; truth.ref2];
 truth.ca = exp(truth.lograb + truth.logCb) + truth.ref1;
 truth.cb = exp(truth.logCb) + truth.ref2;
 
-rng(2) % start random number stream in one spot
+rng(); % start random number stream in one spot
 
 % generate random BL and OP data, assemble into data vector
 data.BL_det1 = ...
@@ -83,6 +83,7 @@ m0 = [rough.lograb; rough.logCb; rough.ref1; rough.ref2];
 [modelCurrent, negLogLik] = fminunc(@(m) -loglikLeastSquares(m, data, setup), m0);
 llCurrent = -negLogLik;
 dvarCurrent = updateDataVariance(modelCurrent, setup);
+dhatCurrent = evaluateModel(modelCurrent, setup);
 
 % build Jacobian matrix
 % derivatives of [BL_det1, BL_det2, OP_det1, OP_det2]
@@ -101,32 +102,28 @@ G(isIsotopeB, 2) = exp(modelCurrent(2));
 G(data.det == 1, 3) = 1; % derivative wrt ref1
 G(data.det == 2, 4) = 1; % derivative wrt ref2
 
-% least squares covariance matrix
+% least squares model parameter covariance matrix
 CM = inv(G'*diag(1./dvarCurrent)*G);
 
 
 %% initialize model parameters and likelihoods
 
-% some maximum likelihood calculations to get close
-X = [setup.x, ones(setup.ndata,1)];
-beta = X \ data; % maximum likelihood solution of model parameters
-noiseMean = var(data - [setup.x, ones(setup.ndata,1)]*beta);
-betaCov = noiseMean * inv(X'*X);
-noiseVariance = 2*noiseMean^2/(setup.ndata - 1);
 
-modelCurrent = [beta; noiseMean];
-noiseCurrent = noiseMean;
-
-% initialize data variance vector, dhat vector, and log-likelihood
-dvarCurrent = noiseCurrent * ones(setup.ndata, 1);
-dhatCurrent = evaluateModel(modelCurrent, setup);
-llCurrent = loglik(dhatCurrent, data, dvarCurrent);
-
-setup.proposalCov = blkdiag(betaCov, noiseVariance);
-setup.nMC = 1e7; % number of MCMC trials
+setup.proposalCov = CM;
+setup.nMC = 1e6; % number of MCMC trials
 setup.seive = 20;
 
 setup.nmodel = length(modelCurrent); % number of model parameters
+
+
+%% Test 1: perturb modelCurrent to ensure convergence
+% perturb modelCurrent by setup.perturbation standard deviations
+
+setup.perturbation = 0;
+modelCurrent = modelCurrent + setup.perturbation*randn(4,1).*sqrt(diag(CM));
+dhatCurrent = evaluateModel(modelCurrent, setup);
+dvarCurrent = updateDataVariance(modelCurrent, setup);
+llCurrent = loglik(dhatCurrent, data, dvarCurrent);
 
 
 %% MCMC
@@ -175,49 +172,54 @@ end % for iMC = 1:nMC
 
 %% MCMC results
 
-results.mean = mean(modelSamples, 2);
-results.meanSlope      = results.mean(1);
-results.meanYIntercept = results.mean(2);
+% convert logratio and log-intensity to ratio and intensity
+outputSamples = modelSamples;
+outputSamples(1:2,:) = exp(outputSamples(1:2,:)); % for ratio and intensity
+
+results.mean = mean(outputSamples, 2);
+% results.meanSlope      = results.mean(1);
+% results.meanYIntercept = results.mean(2);
 % correlation plot
 figure('Position', [50, 50, 800, 600])
-plotmatrix(modelSamples')
+plotmatrix(outputSamples')
 
-figure('Position', [900 50, 700, 600])
-scatter(modelSamples(1,:), modelSamples(2,:), 'Marker', 'o', ...
-    'MarkerFaceColor', 'k', 'MarkerFaceAlpha', 0.2, ...
-    'MarkerEdgeColor','none', 'SizeData', 10)
-hold on
+% figure('Position', [900 50, 700, 600])
+% scatter(modelSamples(1,:), modelSamples(2,:), 'Marker', 'o', ...
+%     'MarkerFaceColor', 'k', 'MarkerFaceAlpha', 0.2, ...
+%     'MarkerEdgeColor','none', 'SizeData', 10)
+% hold on
 
 
 %% theoretical OLS results
 
-% repeated from initialization routine
-X = [setup.x, ones(setup.ndata,1)];
-beta = X \ data;
-betaCov = var(data - [setup.x, ones(setup.ndata,1)]*beta) * inv(X'*X);
-
-% ellipse from OLS fit
-thetas = linspace(0, 2*pi, 100); circpoints = 2*[cos(thetas); sin(thetas)];
-cholcov = chol(betaCov, "lower"); 
-ellipsepoints = cholcov*circpoints + beta;
-plot(ellipsepoints(1,:), ellipsepoints(2,:), 'r', 'LineWidth', 2)
-plot(beta(1), beta(2), '.r', 'MarkerSize', 25)
+% FROM ITERATION 6:
+% % repeated from initialization routine
+% X = [setup.x, ones(setup.ndata,1)];
+% beta = X \ data;
+% betaCov = var(data - [setup.x, ones(setup.ndata,1)]*beta) * inv(X'*X);
+% 
+% % ellipse from OLS fit
+% thetas = linspace(0, 2*pi, 100); circpoints = 2*[cos(thetas); sin(thetas)];
+% cholcov = chol(betaCov, "lower"); 
+% ellipsepoints = cholcov*circpoints + beta;
+% plot(ellipsepoints(1,:), ellipsepoints(2,:), 'r', 'LineWidth', 2)
+% plot(beta(1), beta(2), '.r', 'MarkerSize', 25)
 
 %% plot data and sample fits
-figure('Position', [20, 20, 1200, 1000])
-xmin = -1;
-xmax = 11;
-
-nlines = 1e3;
-
-linesymin = modelSamples(1,1:nlines)*xmin + modelSamples(2,1:nlines);
-linesymax = modelSamples(1,1:nlines)*xmax + modelSamples(2,1:nlines);
-
-line([xmin; xmax], [linesymin; linesymax], 'Color', [0.8500 0.3250 0.0980, 0.05])
-hold on
-plot(setup.x, data, '.', 'MarkerSize', 20, 'MarkerEdgeColor', 'k')
-hax = gca;
-set(hax, 'FontSize', 24)
+% figure('Position', [20, 20, 1200, 1000])
+% xmin = -1;
+% xmax = 11;
+% 
+% nlines = 1e3;
+% 
+% linesymin = modelSamples(1,1:nlines)*xmin + modelSamples(2,1:nlines);
+% linesymax = modelSamples(1,1:nlines)*xmax + modelSamples(2,1:nlines);
+% 
+% line([xmin; xmax], [linesymin; linesymax], 'Color', [0.8500 0.3250 0.0980, 0.05])
+% hold on
+% plot(setup.x, data, '.', 'MarkerSize', 20, 'MarkerEdgeColor', 'k')
+% hax = gca;
+% set(hax, 'FontSize', 24)
 
 
 %% evaluate this particular model
