@@ -199,6 +199,8 @@ postBurnInModels(1:2,:) = exp(postBurnInModels(1:2,:));
 figure('Position', [50, 50, 800, 600])
 plotmatrix(postBurnInModels')
 
+postBurnInChains = modelChains(:,setup.burnin+1:end,:);
+postBurnInChains(1:2,:,:) = exp(postBurnInChains(1:2,:,:));
 
 
 
@@ -239,6 +241,10 @@ plotmatrix(postBurnInModels')
 % plot(beta(1), beta(2), '.r', 'MarkerSize', 25)
 
 %% plot data and sample fits
+
+makeForestPlot(postBurnInChains)
+makeECDFs(postBurnInChains)
+
 % figure('Position', [20, 20, 1200, 1000])
 % xmin = -1;
 % xmax = 11;
@@ -334,3 +340,83 @@ function ll = loglikLeastSquares(m, data, setup)
     ll = loglik(dhat, data, dvar);
 
 end % function loglikLeastSquares
+
+%% make a forest plot from the sampled model parameters from multiple chains
+
+function makeForestPlot(modelChains)
+
+vbuffer = 0.2; % vertical buffer at top and bottom
+confidenceLimits = [0.68 0.95]; % for histogram
+
+nChains = size(modelChains,3);
+figure('Position', [1, 1, 1000, 750], 'Units', 'pixels')
+cmap = colormap(winter(nChains));
+
+nVariables = size(modelChains, 1);
+mRows = floor(sqrt(nVariables));
+nColumns = ceil(sqrt(nVariables));
+tiledlayout(mRows,nColumns) % some function of nVariables in future
+
+nSamples = size(modelChains,2);
+for iVariable = 1:nVariables
+
+    nexttile
+    hold on
+    
+    for iChain = 1:nChains
+
+        sortChain = sort(modelChains(iVariable,:,iChain));
+
+        intervalWidth = ceil(confidenceLimits(1)*nSamples);
+        upperStop1 = intervalWidth;
+        shortestInterval = Inf;
+        lowerLimit1 = 1;
+        for iLowerLimit = 1:upperStop1
+            intervalWidth = sortChain(iLowerLimit+intervalWidth) - ...
+                            sortChain(iLowerLimit);
+            
+            if intervalWidth < shortestInterval
+                shotestInterval = intervalWidth;
+                lowerLimit1 = iLowerLimit;
+            end % if intervalWidth < shortestInterval
+            %START HERE TO SAVE OFF INTERVAL
+
+        end % for iSample for limit1
+
+    end % for iChain
+
+end % for iVariable
+
+
+
+end % function makeForestPlot
+
+
+%%  Compare empirical cdfs
+
+function makeECDFs(modelChains)
+
+nChains = size(modelChains,3);
+figure('Position', [1, 1, 1000, 750], 'Units', 'pixels')
+cmap = colormap(winter(nChains));
+
+nVariables = size(modelChains, 1);
+mRows = floor(sqrt(nVariables));
+nColumns = ceil(sqrt(nVariables));
+tiledlayout(mRows,nColumns) % some function of nVariables in future
+
+for iVariable = 1:nVariables
+
+    nexttile
+    hold on
+    
+    for iChain = 1:nChains
+
+        [f, x] = ecdf(modelChains(iVariable, :, iChain));
+        plot(x, f, 'LineWidth', 2, 'Color', cmap(iChain,:)) 
+
+    end % function makeECDFs
+
+end % for iVariable
+
+end % function makeECDFs
