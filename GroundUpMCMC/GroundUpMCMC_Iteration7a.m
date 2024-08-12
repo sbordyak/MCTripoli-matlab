@@ -80,8 +80,9 @@ inBL_det2 = ~data.isOP & data.det == 2;
 rough.ref1 = mean(data.int(inBL_det1));
 rough.ref2 = mean(data.int(inBL_det2));
 
-m0 = [rough.lograb; rough.logCb; rough.ref1; rough.ref2];
-[modelInitial, negLogLik] = fminunc(@(m) -loglikLeastSquares(m, data, setup), m0);
+mRough = [rough.lograb; rough.logCb; rough.ref1; rough.ref2];
+functionToMinimize = @(m) -loglikLeastSquares(m, data, setup);
+[modelInitial, negLogLik] = fminunc(@(m) functionToMinimize(m), mRough);
 llInitial = -negLogLik;
 dvarCurrent = updateDataVariance(modelInitial, setup);
 dhatCurrent = evaluateModel(modelInitial, setup);
@@ -91,7 +92,7 @@ dhatCurrent = evaluateModel(modelInitial, setup);
 % with respect to [log(a/b), log(Cb), ref1, ref2]
 G = zeros(length(data.int), 4);
 
-% derivative of ca wrt log(a/b)
+% derivative of ca wrt log(a/b): dca__dlogra_b
 G(isIsotopeA, 1) = exp(modelInitial(1)+modelInitial(2));
 
 % derivative of ca wrt log(Cb)
@@ -203,62 +204,15 @@ postBurnInChains = modelChains(:,setup.burnin+1:end,:);
 postBurnInChains(1:2,:,:) = exp(postBurnInChains(1:2,:,:));
 
 
-
-% setup.burnin = 500;
-% 
-% % convert logratio and log-intensity to ratio and intensity
-% outputModels = squeeze(outputModels);
-% outputModels = outputModels(:,setup.burnin+1:end,:);
-% outputModels(1:2,:) = exp(outputModels(1:2,:)); % for ratio and intensity
-% 
-% results.mean = mean(outputModels, 2);
-% % results.meanSlope      = results.mean(1);
-% % results.meanYIntercept = results.mean(2);
-% % correlation plot
-% figure('Position', [50, 50, 800, 600])
-% plotmatrix(outputModels')
-
-% figure('Position', [900 50, 700, 600])
-% scatter(modelSamples(1,:), modelSamples(2,:), 'Marker', 'o', ...
-%     'MarkerFaceColor', 'k', 'MarkerFaceAlpha', 0.2, ...
-%     'MarkerEdgeColor','none', 'SizeData', 10)
-% hold on
-
-
-%% theoretical OLS results
-
-% FROM ITERATION 6:
-% % repeated from initialization routine
-% X = [setup.x, ones(setup.ndata,1)];
-% beta = X \ data;
-% betaCov = var(data - [setup.x, ones(setup.ndata,1)]*beta) * inv(X'*X);
-% 
-% % ellipse from OLS fit
-% thetas = linspace(0, 2*pi, 100); circpoints = 2*[cos(thetas); sin(thetas)];
-% cholcov = chol(betaCov, "lower"); 
-% ellipsepoints = cholcov*circpoints + beta;
-% plot(ellipsepoints(1,:), ellipsepoints(2,:), 'r', 'LineWidth', 2)
-% plot(beta(1), beta(2), '.r', 'MarkerSize', 25)
-
 %% plot data and sample fits
+
+% next task here
+
+
+%% Inspect chains for agreement
 
 makeForestPlot(postBurnInChains)
 makeECDFs(postBurnInChains)
-
-% figure('Position', [20, 20, 1200, 1000])
-% xmin = -1;
-% xmax = 11;
-% 
-% nlines = 1e3;
-% 
-% linesymin = modelSamples(1,1:nlines)*xmin + modelSamples(2,1:nlines);
-% linesymax = modelSamples(1,1:nlines)*xmax + modelSamples(2,1:nlines);
-% 
-% line([xmin; xmax], [linesymin; linesymax], 'Color', [0.8500 0.3250 0.0980, 0.05])
-% hold on
-% plot(setup.x, data, '.', 'MarkerSize', 20, 'MarkerEdgeColor', 'k')
-% hax = gca;
-% set(hax, 'FontSize', 24)
 
 
 %% evaluate this particular model
@@ -345,8 +299,8 @@ end % function loglikLeastSquares
 
 function makeForestPlot(modelChains)
 
-vbuffer = 0.2; % vertical buffer at top and bottom
-confidenceLimits = [0.68 0.95]; % for histogram
+vbuffer = 0.15; % vertical buffer at top and bottom
+confidenceLevels = [0.68 0.95]; % for histogram
 
 nChains = size(modelChains,3);
 figure('Position', [1, 1, 1000, 750], 'Units', 'pixels')
@@ -357,33 +311,41 @@ mRows = floor(sqrt(nVariables));
 nColumns = ceil(sqrt(nVariables));
 tiledlayout(mRows,nColumns) % some function of nVariables in future
 
-nSamples = size(modelChains,2);
+intervalArray1 = zeros(2, nChains); % confidenceLevels(1)
+intervalArray2 = zeros(2, nChains); % confidenceLevels(2)
+medianArray = zeros(1, nChains); % medians
 for iVariable = 1:nVariables
 
     nexttile
     hold on
     
     for iChain = 1:nChains
+    
+        sortedChain = sort(modelChains(iVariable, :, iChain));
+        interval1 = findShortestInterval(sortedChain, confidenceLevels(1));
+        interval2 = findShortestInterval(sortedChain, confidenceLevels(2));
 
-        sortChain = sort(modelChains(iVariable,:,iChain));
+        intervalArray1(:,iChain) = interval1;
+        intervalArray2(:,iChain) = interval2;
 
-        intervalWidth = ceil(confidenceLimits(1)*nSamples);
-        upperStop1 = intervalWidth;
-        shortestInterval = Inf;
-        lowerLimit1 = 1;
-        for iLowerLimit = 1:upperStop1
-            intervalWidth = sortChain(iLowerLimit+intervalWidth) - ...
-                            sortChain(iLowerLimit);
-            
-            if intervalWidth < shortestInterval
-                shotestInterval = intervalWidth;
-                lowerLimit1 = iLowerLimit;
-            end % if intervalWidth < shortestInterval
-            %START HERE TO SAVE OFF INTERVAL
-
-        end % for iSample for limit1
+        nSamples = length(sortedChain);
+        medianArray(iChain) = ...
+            (...
+            sortedChain(ceil(nSamples/2)) + ...
+            sortedChain(floor(nSamples/2+1)) ...
+            ) / 2; % median without sorting again
 
     end % for iChain
+
+    yCoords = vbuffer + (1-2*vbuffer)/(nChains-1) * (0:(nChains-1));
+    
+    line(intervalArray1, [yCoords; yCoords], "LineWidth", 5, "Color", "#0072BD")
+    line(intervalArray2, [yCoords; yCoords], "LineWidth", 2, "Color", "#0072BD")
+    plot(medianArray, yCoords, 'o', 'MarkerSize', 8, ...
+        'MarkerFaceColor', "#A2142F", 'MarkerEdgeColor', 'k')
+
+    ylim([0, 1])
+    set(gca,'YTickLabel',[]);
 
 end % for iVariable
 
@@ -420,3 +382,34 @@ for iVariable = 1:nVariables
 end % for iVariable
 
 end % function makeECDFs
+
+
+%% Find shortest interval
+function interval = findShortestInterval(sortedSamples, confidenceLevel)
+% find the shortest interval containing a confidenceLevel confidence
+% interval
+% INPUTS: samples: a sorted vector of samples of the distribution
+%         confidenceLevel: 0 < confidenceLevel < 1
+% OUTPUTS: interval: two-element vector bounding confidence interval
+
+nSamples = length(sortedSamples);
+
+intervalIndices = ceil(confidenceLevel*nSamples);
+upperStop = nSamples - intervalIndices;
+shortestInterval = Inf;
+for iLowerLimit = 1:upperStop
+    
+    intervalWidth = sortedSamples(iLowerLimit+intervalIndices) - ...
+                    sortedSamples(iLowerLimit);
+
+    if intervalWidth < shortestInterval
+        shortestInterval = intervalWidth;
+        lowerLimit = iLowerLimit;
+    end % if intervalWidth < shortestInterval
+
+end % for iSample for limit1
+
+interval = [sortedSamples(lowerLimit), ...
+            sortedSamples(lowerLimit+intervalIndices)];
+
+end % function findShortestInterval
