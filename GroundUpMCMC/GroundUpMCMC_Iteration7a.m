@@ -2,6 +2,7 @@
 
 % 7. Simplified (model 1) mass spectrometer data
 % 7a. Add multiple chains for QAQC, rafactor script into functions
+% 
 
 %% synthetic data setup
 
@@ -83,9 +84,9 @@ rough.ref2 = mean(data.int(inBL_det2));
 mRough = [rough.lograb; rough.logCb; rough.ref1; rough.ref2];
 functionToMinimize = @(m) -loglikLeastSquares(m, data, setup);
 [modelInitial, negLogLik] = fminunc(@(m) functionToMinimize(m), mRough);
-llInitial = -negLogLik;
+%llInitial = -negLogLik;
 dvarCurrent = updateDataVariance(modelInitial, setup);
-dhatCurrent = evaluateModel(modelInitial, setup);
+%dhatCurrent = evaluateModel(modelInitial, setup);
 
 % build Jacobian matrix
 % derivatives of [BL_det1, BL_det2, OP_det1, OP_det2]
@@ -111,32 +112,41 @@ CM = inv(G'*diag(1./dvarCurrent)*G);
 %% initialize model parameters and likelihoods
 
 setup.proposalCov = CM;
-setup.nMC = 1e6; % number of MCMC trials
+setup.nMC = 1e4; % number of MCMC trials
 setup.seive = 20;
 
 setup.nmodel = length(modelInitial); % number of model parameters
 
 
-%% Test 1: perturb modelCurrent to ensure convergence
-% perturb modelCurrent by setup.perturbation standard deviations
+%% Perturb initial model to ensure convergence
 
-setup.perturbation = 0;
-modelInitial = modelInitial + setup.perturbation*randn(4,1).*sqrt(diag(CM));
-dhatCurrent = evaluateModel(modelInitial, setup);
-dvarCurrent = updateDataVariance(modelInitial, setup);
-llCurrent = loglik(dhatCurrent, data, dvarCurrent);
-
-%% Set up multiple chains
-
+setup.perturbation = 10;
 setup.nChains = 10;
+
+% perturb modelCurrent by setup.perturbation standard deviations
+modelInitialVector = zeros(setup.nmodel, setup.nChains);
+llInitialVector = zeros(1, setup.nChains);
+for iChain = 1:setup.nChains
+    modelInitialVector(:, iChain) = modelInitial + ...
+                   setup.perturbation*randn(4,1).*sqrt(diag(CM));
+    dhatCurrent = evaluateModel(modelInitialVector(:,iChain), setup);
+    dvarCurrent = updateDataVariance(modelInitialVector(:,iChain), setup);
+    llInitialVector(iChain) = loglik(dhatCurrent, data, dvarCurrent);
+end
+
+
+%% Run up multiple chains of Metropolis Hastings
 nSavedModels = setup.nMC/setup.seive;
 modelChains  = nan([setup.nmodel, nSavedModels, setup.nChains], "double");
 loglikChains = nan([1, nSavedModels, setup.nChains], "double");
 
 parfor iChain = 1:setup.nChains
 
-
-[outputModels, outputLogLiks] = MetropolisHastings(modelInitial, llInitial, data, setup);
+[outputModels, outputLogLiks] = ...
+    MetropolisHastings(...
+    modelInitialVector(:,iChain), ...
+    llInitialVector(iChain), ...
+    data, setup);
 
 modelChains(:,:,iChain) = outputModels;
 loglikChains(:,:,iChain) = outputLogLiks;
@@ -144,9 +154,11 @@ loglikChains(:,:,iChain) = outputLogLiks;
 end % parfor iChain = 1:nChains
 
 
+%% Functions
+
 %% MCMC results
 
-setup.burnin = 500;
+setup.burnin = 50;
 firstChain = modelChains(:,:,1);
 postBurnInModels = firstChain(:,setup.burnin+1:end,:);
 postBurnInModels(1:2,:) = exp(postBurnInModels(1:2,:));
@@ -292,7 +304,8 @@ function ll = loglik(dhat, data, dvar)
 
 end % function loglik
 
-%% caluclate log-likelihood as a function of model parameters
+
+%% calculate log-likelihood as a function of model parameters
 % minimize ll for least squares 
 
 function ll = loglikLeastSquares(m, data, setup)
@@ -303,6 +316,7 @@ function ll = loglikLeastSquares(m, data, setup)
 
 end % function loglikLeastSquares
 
+
 %% make a forest plot from the sampled model parameters from multiple chains
 
 function makeForestPlot(modelChains)
@@ -312,7 +326,7 @@ confidenceLevels = [0.68 0.95]; % for histogram
 
 nChains = size(modelChains,3);
 figure('Position', [1, 1, 1000, 750], 'Units', 'pixels')
-cmap = colormap(winter(nChains));
+colormap(winter(nChains));
 
 nVariables = size(modelChains, 1);
 mRows = floor(sqrt(nVariables));
@@ -382,8 +396,8 @@ for iVariable = 1:nVariables
     
     for iChain = 1:nChains
 
-        [f, x] = ecdf(modelChains(iVariable, :, iChain));
-        plot(x, f, 'LineWidth', 2, 'Color', cmap(iChain,:)) 
+        [F, x] = ecdf(modelChains(iVariable, :, iChain));
+        plot(x, F, 'LineWidth', 2, 'Color', cmap(iChain,:)) 
 
     end % function makeECDFs
 
@@ -392,7 +406,8 @@ end % for iVariable
 end % function makeECDFs
 
 
-%% Find shortest interval
+%% Find shortest empirical confidence interval among samples of distribution
+
 function interval = findShortestInterval(sortedSamples, confidenceLevel)
 % find the shortest interval containing a confidenceLevel confidence
 % interval
@@ -405,6 +420,7 @@ nSamples = length(sortedSamples);
 intervalIndices = ceil(confidenceLevel*nSamples);
 upperStop = nSamples - intervalIndices;
 shortestInterval = Inf;
+lowerLimit = 1;
 for iLowerLimit = 1:upperStop
     
     intervalWidth = sortedSamples(iLowerLimit+intervalIndices) - ...
