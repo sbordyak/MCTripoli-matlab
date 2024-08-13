@@ -1,7 +1,7 @@
 %% Metropolis Hastings MCMC from the ground up
 
 % 7. Simplified (model 1) mass spectrometer data
-% 7a. Add multiple chains for QAQC
+% 7a. Add multiple chains for QAQC, rafactor script into functions
 
 %% synthetic data setup
 
@@ -110,7 +110,6 @@ CM = inv(G'*diag(1./dvarCurrent)*G);
 
 %% initialize model parameters and likelihoods
 
-
 setup.proposalCov = CM;
 setup.nMC = 1e6; % number of MCMC trials
 setup.seive = 20;
@@ -136,54 +135,8 @@ loglikChains = nan([1, nSavedModels, setup.nChains], "double");
 
 parfor iChain = 1:setup.nChains
 
-modelCurrent = modelInitial;
-llCurrent = llInitial;
 
-%% MCMC
-
-outputModels = nan([setup.nmodel, setup.nMC/setup.seive], "double");
-outputLogLiks = nan([1, setup.nMC/setup.seive], "double");
-
-for iMC = 1:setup.nMC
-
-    % save off current model
-    if ~mod(iMC,setup.seive)
-        outputIndex = iMC/setup.seive;
-        outputModels(:, outputIndex) = modelCurrent;
-        outputLogLiks(outputIndex) = llCurrent;
-    end
-    
-    % propose a new model
-    modelProposed = modelCurrent + ...
-                    mvnrnd( zeros(setup.nmodel,1), ...
-                            setup.proposalCov )';
-
-    % calculate residuals for old and new models
-    dhatProposed = evaluateModel(modelProposed, setup);
-    
-    % create data covariance with current and proposed noise terms
-    dvarProposed = updateDataVariance(modelProposed, setup);
-    
-    % calculate log-likelihoods of current and proposed samples
-    llProposed = loglik(dhatProposed, data, dvarProposed);
-
-    % difference in log-likelihood = log(likelihood ratio)
-    delta_ll = llProposed - llCurrent;
-    
-    % probability of keeping the proposed model
-    keep = min(1, exp(delta_ll)); 
-
-    % keep the proposed model with probability = keep
-    if keep > rand(1) % if we're keeping the proposed model
-
-        % the proposed model becomes the current one
-        modelCurrent = modelProposed; 
-        llCurrent  = llProposed;
-
-    end % if keep
-
-
-end % for iMC = 1:nMC
+[outputModels, outputLogLiks] = MetropolisHastings(modelInitial, llInitial, data, setup);
 
 modelChains(:,:,iChain) = outputModels;
 loglikChains(:,:,iChain) = outputLogLiks;
@@ -213,6 +166,61 @@ postBurnInChains(1:2,:,:) = exp(postBurnInChains(1:2,:,:));
 
 makeForestPlot(postBurnInChains)
 makeECDFs(postBurnInChains)
+
+
+%% MCMC - MetropolisHastings
+
+function [outputModels, outputLogLiks] = ...
+    MetropolisHastings(modelInitial, llInitial, data, setup)
+
+modelCurrent = modelInitial;
+llCurrent = llInitial;
+
+outputModels = nan([setup.nmodel, setup.nMC/setup.seive], "double");
+outputLogLiks = nan([1, setup.nMC/setup.seive], "double");
+
+for iMC = 1:setup.nMC
+
+    % save off current model
+    if ~mod(iMC,setup.seive)
+        outputIndex = iMC/setup.seive;
+        outputModels(:, outputIndex) = modelCurrent;
+        outputLogLiks(outputIndex) = llCurrent;
+    end
+
+    % propose a new model
+    modelProposed = modelCurrent + ...
+        mvnrnd( zeros(setup.nmodel,1), ...
+        setup.proposalCov )';
+
+    % calculate residuals for old and new models
+    dhatProposed = evaluateModel(modelProposed, setup);
+
+    % create data covariance with current and proposed noise terms
+    dvarProposed = updateDataVariance(modelProposed, setup);
+
+    % calculate log-likelihoods of current and proposed samples
+    llProposed = loglik(dhatProposed, data, dvarProposed);
+
+    % difference in log-likelihood = log(likelihood ratio)
+    delta_ll = llProposed - llCurrent;
+
+    % probability of keeping the proposed model
+    keep = min(1, exp(delta_ll));
+
+    % keep the proposed model with probability = keep
+    if keep > rand(1) % if we're keeping the proposed model
+
+        % the proposed model becomes the current one
+        modelCurrent = modelProposed;
+        llCurrent  = llProposed;
+
+    end % if keep
+
+
+end % for iMC = 1:nMC
+
+end % function MetropolisHastings()
 
 
 %% evaluate this particular model
