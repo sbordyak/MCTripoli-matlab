@@ -17,7 +17,11 @@ setup.BLIntegrationTimes = ones(setup.nBLIntegrations,1);
 setup.OPIntegrationTimes = ones(setup.nOPIntegrations,1);
 
 % true parameters for simulated data
-truth.lograb = log(0.3);   % log(a/b), with (a/b) < 1 preferred
+truth.modelParameterNames = ["$\log(a/b)$"; 
+                             "$\log(C_b)$"; 
+                             "$re\hspace{-1pt}f_1$"; 
+                             "$re\hspace{-1pt}f_2$"];
+truth.lograb = log(0.3);   % log(a/b), with (a/b) <= 1 preferred
 truth.logCb = log(2e6);  % log(Cb) log(current of isotope b)
 truth.ref1 = -1e2; % detector 1, cps
 truth.ref2 =  2e2; % detector 2, cps
@@ -26,8 +30,37 @@ truth.model = [truth.lograb; truth.logCb; truth.ref1; truth.ref2];
 truth.ca = exp(truth.lograb + truth.logCb) + truth.ref1;
 truth.cb = exp(truth.logCb) + truth.ref2;
 
+%%
+truth.dhat.dvar = updateDataVariance(truth.model, setup);
+truth.dhat.int = [truth.ref1*ones(setup.nBLIntegrations,1);
+                  truth.ref2*ones(setup.nBLIntegrations,1);
+                  truth.ca*ones(setup.nOPIntegrations,1);
+                  truth.cb*ones(setup.nOPIntegrations,1)];
+
+% is datum an on-peak measurement? 
+truth.dhat.isOP = [false(2*setup.nBLIntegrations,1); 
+              true(2*setup.nOPIntegrations,1)];
+
+% detector index for this measurement
+truth.dhat.det = [1*ones(setup.nBLIntegrations,1);
+            2*ones(setup.nBLIntegrations,1);
+            1*ones(setup.nOPIntegrations,1);
+            2*ones(setup.nOPIntegrations,1)];
+
+% isotope index for this measurement, 1 = a, 2 = b
+truth.dhat.iso = [zeros(2*setup.nBLIntegrations,1);
+            1*ones(setup.nOPIntegrations,1);
+            2*ones(setup.nOPIntegrations,1)];
+
+
+truth.G = makeG(truth.model, truth.dhat);
+truth.CM = inv(truth.G'*diag(1./truth.dhat.dvar)*truth.G);
+
+
+%% START SIMULATIONS HERE
+
 tic
-setup.nSimulations = 1000;
+setup.nSimulations = 1e4;
 for iSim = 1:setup.nSimulations
 
 rng(); % start random number stream in one spot
@@ -89,30 +122,17 @@ rough.ref2 = mean(data.int(inBL_det2));
 mRough = [rough.lograb; rough.logCb; rough.ref1; rough.ref2];
 functionToMinimize = @(m) -loglikLeastSquares(m, data, setup);
 opts = optimoptions('fminunc', 'Display', 'off');
-[modelInitial, negLogLik] = fminunc(@(m) functionToMinimize(m), mRough, opts);
+modelInitial = fminunc(@(m) functionToMinimize(m), mRough, opts);
 %llInitial = -negLogLik;
 dvarCurrent = updateDataVariance(modelInitial, setup);
 %dhatCurrent = evaluateModel(modelInitial, setup);
 
 % build Jacobian matrix
-% derivatives of [BL_det1, BL_det2, OP_det1, OP_det2]
-% with respect to [log(a/b), log(Cb), ref1, ref2]
-G = zeros(length(data.int), 4);
-
-% derivative of ca wrt log(a/b): dca__dlogra_b
-G(isIsotopeA, 1) = exp(modelInitial(1)+modelInitial(2));
-
-% derivative of ca wrt log(Cb)
-G(isIsotopeA, 2) = exp(modelInitial(1)+modelInitial(2));
-
-% derivative of cb wrt log(Cb)
-G(isIsotopeB, 2) = exp(modelInitial(2));
-
-G(data.det == 1, 3) = 1; % derivative wrt ref1
-G(data.det == 2, 4) = 1; % derivative wrt ref2
+G = makeG(modelInitial, data);
 
 % least squares model parameter covariance matrix
 CM = inv(G'*diag(1./dvarCurrent)*G);
+
 
 
 %% initialize model parameters and likelihoods
@@ -127,7 +147,7 @@ setup.nmodel = length(modelInitial); % number of model parameters
 %% Perturb initial model to ensure convergence
 
 setup.perturbation = 10;
-setup.nChains = 10;
+setup.nChains = 8;
 
 % perturb modelCurrent by setup.perturbation standard deviations
 modelInitialVector = zeros(setup.nmodel, setup.nChains);
@@ -200,8 +220,7 @@ makeECDFs(postBurnInChains)
 
 %% Inspect results for accuracy
 
-inspectSimulationResults(result)
-
+inspectSimulationResults(result, truth)
 
 %% Functions %%%%%%%%%%%%%%%%%%%%%%%%%%
 % Current script above, functions below
@@ -344,6 +363,31 @@ function ll = loglikLeastSquares(m, data, setup)
 end % function loglikLeastSquares
 
 
+%% assemble design matrix G from model and data
+% G is the linearized design matrix in d = Gm
+
+function G = makeG(m, data)
+
+isIsotopeA = data.iso == 1;
+isIsotopeB = data.iso == 2;
+
+G = zeros(length(data.int), 4);
+
+% derivative of ca wrt log(a/b): dca__dlogra_b
+G(isIsotopeA, 1) = exp(m(1)+m(2));
+
+% derivative of ca wrt log(Cb)
+G(isIsotopeA, 2) = exp(m(1)+m(2));
+
+% derivative of cb wrt log(Cb)
+G(isIsotopeB, 2) = exp(m(2));
+
+G(data.det == 1, 3) = 1; % derivative wrt ref1
+G(data.det == 2, 4) = 1; % derivative wrt ref2
+
+end % function G = makeG(m, data)
+
+
 %% make a forest plot from the sampled model parameters from multiple chains
 
 function makeForestPlot(modelChains)
@@ -468,22 +512,83 @@ end % function findShortestInterval
 
 %% inspect simulation results
 
-function inspectSimulationResults(result)
+function inspectSimulationResults(result, truth)
 
-figure('Position', [100 100 600 500], 'Units', 'pixels')
+fh = figure('Position', [100 100 600 500], 'Units', 'pixels', ...
+    'Name', 'Simulation Results', 'NumberTitle','off', ...
+    'Toolbar', 'none');
+tg = uitabgroup(fh, 'Position', [0 0 1 1], 'Units', 'normalized');
+
+% Chi-square plot
+tabChiSq = uitab(tg, "Title", "ChiSquare");
+axChiSq = axes(tabChiSq, 'OuterPosition', [0 0 1 1], ...
+    'Units', 'normalized');
 
 chiSq = [result(:).ChiSq]';
 nModelParams = length(result(1).r);
 
-histogram(chiSq, 'normalization', 'pdf')
+histogram(axChiSq, chiSq, 'normalization', 'pdf')
 hold on
 xRange = xlim(gca);
 xVec = linspace(xRange(1), xRange(2), 500);
-plot(xVec, chi2pdf(xVec, nModelParams), 'LineWidth', 2)
-set(gca, 'FontSize', 16)
-xlabel('$x$', 'FontSize', 24, 'Interpreter', 'latex')
-ylabel('$f_4(x)$', 'FontSize', 24, 'Interpreter', 'latex')
-title('$\chi^2$ for Simulations', 'FontSize', 26, 'Interpreter', 'latex')
+plot(axChiSq, xVec, chi2pdf(xVec, nModelParams), 'LineWidth', 2)
+set(axChiSq, 'FontSize', 16)
+xlabel(axChiSq, '$x$', 'FontSize', 24, 'Interpreter', 'latex')
+ylabel(axChiSq, '$f_4(x)$', 'FontSize', 24, 'Interpreter', 'latex')
+title(axChiSq, '$\chi^2$ for Simulations', 'FontSize', 26, 'Interpreter', 'latex')
 
+% Matrix Plot: setup
+tabMatrixPlot = uitab(tg, "Title", "MatrixPlot");
+axMatrixPlot = axes(tabMatrixPlot, 'OuterPosition', [0 0 1 1], ...
+    'Units', 'normalized');
+
+simulationMeans = [result(:).modelMean]';
+[S,AX,BigAx,H,HAx] = plotmatrix(axMatrixPlot, simulationMeans);
+set(AX, {'NextPlot'}, {'add'})
+
+% Matrix Plot: true values on histograms
+for rowModelParam = 1:nModelParams
+
+    histYRange = HAx(rowModelParam).YLim;
+    line(HAx(rowModelParam), ...
+        truth.model(rowModelParam)*ones(1,2), histYRange, ...
+        'LineWidth', 2, 'Color', 'r')
+
+    for colModelParam = 1:nModelParams
+
+        if colModelParam == 1
+            ylabel(AX(rowModelParam, colModelParam), ...
+                truth.modelParameterNames(rowModelParam), ...
+                "FontSize", 14, "Interpreter", "latex");
+        end
+
+        if rowModelParam == nModelParams
+            xlabel(AX(rowModelParam, colModelParam), ...
+                truth.modelParameterNames(colModelParam), ...
+                "FontSize", 14, "Interpreter", "latex");
+        end
+
+        if rowModelParam == colModelParam, continue, end
+        
+        trueModel = [truth.model(colModelParam); ...
+                     truth.model(rowModelParam)];
+        plot(AX(rowModelParam, colModelParam), ...
+            trueModel(1), trueModel(2),...
+            'o', 'MarkerSize', 6, ...
+            'MarkerEdgeColor', 'k', 'MarkerFaceColor', 'r')
+
+        subCov = truth.CM([colModelParam rowModelParam],...
+                          [colModelParam rowModelParam]);
+        thetas = linspace(0, 2*pi, 100); 
+        circpoints = 2*[cos(thetas); sin(thetas)];
+        cholcov = chol(subCov, "lower"); 
+        ellipsepoints = cholcov*circpoints + trueModel;
+        plot(AX(rowModelParam, colModelParam), ...
+            ellipsepoints(1,:), ellipsepoints(2,:), 'r', 'LineWidth', 2)
+
+    end % for colModelParam
+
+end % for iModelParam
 
 end % function inspectSimulationResults
+
