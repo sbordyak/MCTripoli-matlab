@@ -1,8 +1,9 @@
 %% Metropolis Hastings MCMC from the ground up
 
 % 7. Simplified (model 1) mass spectrometer data
-% 7a. Add multiple chains for QAQC, rafactor script into functions
-% 
+% 7a. Add multiple chains for QAQC, rafactor script into functions, and
+% perform multiple simulations to test if results consistent with synthetic
+% data
 
 %% synthetic data setup
 
@@ -16,14 +17,18 @@ setup.BLIntegrationTimes = ones(setup.nBLIntegrations,1);
 setup.OPIntegrationTimes = ones(setup.nOPIntegrations,1);
 
 % true parameters for simulated data
-truth.lograb = log(0.03);   % log(a/b), with (a/b) < 1 preferred
-truth.logCb = log(1e6);  % log(Cb) log(current of isotope b)
+truth.lograb = log(0.3);   % log(a/b), with (a/b) < 1 preferred
+truth.logCb = log(2e6);  % log(Cb) log(current of isotope b)
 truth.ref1 = -1e2; % detector 1, cps
 truth.ref2 =  2e2; % detector 2, cps
 truth.model = [truth.lograb; truth.logCb; truth.ref1; truth.ref2];
 
 truth.ca = exp(truth.lograb + truth.logCb) + truth.ref1;
 truth.cb = exp(truth.logCb) + truth.ref2;
+
+tic
+setup.nSimulations = 1000;
+for iSim = 1:setup.nSimulations
 
 rng(); % start random number stream in one spot
 
@@ -83,7 +88,8 @@ rough.ref2 = mean(data.int(inBL_det2));
 
 mRough = [rough.lograb; rough.logCb; rough.ref1; rough.ref2];
 functionToMinimize = @(m) -loglikLeastSquares(m, data, setup);
-[modelInitial, negLogLik] = fminunc(@(m) functionToMinimize(m), mRough);
+opts = optimoptions('fminunc', 'Display', 'off');
+[modelInitial, negLogLik] = fminunc(@(m) functionToMinimize(m), mRough, opts);
 %llInitial = -negLogLik;
 dvarCurrent = updateDataVariance(modelInitial, setup);
 %dhatCurrent = evaluateModel(modelInitial, setup);
@@ -112,7 +118,7 @@ CM = inv(G'*diag(1./dvarCurrent)*G);
 %% initialize model parameters and likelihoods
 
 setup.proposalCov = CM;
-setup.nMC = 1e4; % number of MCMC trials
+setup.nMC = 2e4; % number of MCMC trials
 setup.seive = 20;
 
 setup.nmodel = length(modelInitial); % number of model parameters
@@ -154,30 +160,51 @@ loglikChains(:,:,iChain) = outputLogLiks;
 end % parfor iChain = 1:nChains
 
 
-%% Functions
-
-%% MCMC results
+%% Burn in
 
 setup.burnin = 50;
-firstChain = modelChains(:,:,1);
-postBurnInModels = firstChain(:,setup.burnin+1:end,:);
-postBurnInModels(1:2,:) = exp(postBurnInModels(1:2,:));
-figure('Position', [50, 50, 800, 600])
-plotmatrix(postBurnInModels')
-
 postBurnInChains = modelChains(:,setup.burnin+1:end,:);
-postBurnInChains(1:2,:,:) = exp(postBurnInChains(1:2,:,:));
 
 
 %% plot data and sample fits
 
-% next task here
+% aggregate chains
+setup.nPostBurnIn = size(postBurnInChains, 2);
+mAll = reshape(postBurnInChains, [setup.nmodel, setup.nPostBurnIn*setup.nChains]);
+result(iSim).modelMean = mean(mAll,2);
+result(iSim).modelCov = cov(mAll');
+
+% calculate chiSqare with true values
+result(iSim).r = result(iSim).modelMean - truth.model;
+result(iSim).ChiSq = result(iSim).r' * inv(result(iSim).modelCov) * result(iSim).r;
+
+if ~mod(iSim,10)
+    disp("Simulation number " + num2str(iSim))
+    toc
+end % if ~mod(iSim,10)
+
+end % for iSim = 1:nSimulations
+toc
 
 
 %% Inspect chains for agreement
 
+firstChain = modelChains(:,:,1);
+firstChainPostBurnIn = firstChain(:,setup.burnin+1:end,:);
+firstChainPostBurnIn(1:2,:) = exp(firstChainPostBurnIn(1:2,:));
+figure('Position', [50, 50, 800, 600])
+plotmatrix(firstChainPostBurnIn')
+
 makeForestPlot(postBurnInChains)
 makeECDFs(postBurnInChains)
+
+%% Inspect results for accuracy
+
+inspectSimulationResults(result)
+
+
+%% Functions %%%%%%%%%%%%%%%%%%%%%%%%%%
+% Current script above, functions below
 
 
 %% MCMC - MetropolisHastings
@@ -437,3 +464,26 @@ interval = [sortedSamples(lowerLimit), ...
             sortedSamples(lowerLimit+intervalIndices)];
 
 end % function findShortestInterval
+
+
+%% inspect simulation results
+
+function inspectSimulationResults(result)
+
+figure('Position', [100 100 600 500], 'Units', 'pixels')
+
+chiSq = [result(:).ChiSq]';
+nModelParams = length(result(1).r);
+
+histogram(chiSq, 'normalization', 'pdf')
+hold on
+xRange = xlim(gca);
+xVec = linspace(xRange(1), xRange(2), 500);
+plot(xVec, chi2pdf(xVec, nModelParams), 'LineWidth', 2)
+set(gca, 'FontSize', 16)
+xlabel('$x$', 'FontSize', 24, 'Interpreter', 'latex')
+ylabel('$f_4(x)$', 'FontSize', 24, 'Interpreter', 'latex')
+title('$\chi^2$ for Simulations', 'FontSize', 26, 'Interpreter', 'latex')
+
+
+end % function inspectSimulationResults
