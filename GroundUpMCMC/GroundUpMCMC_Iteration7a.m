@@ -15,6 +15,9 @@ setup.detector.resistance = 1e11;
 setup.detector.gain = 1;
 setup.BLIntegrationTimes = ones(setup.nBLIntegrations,1);
 setup.OPIntegrationTimes = ones(setup.nOPIntegrations,1);
+setup.BLTimes = cumsum(setup.BLIntegrationTimes);
+setup.OPTimes = max(setup.BLTimes) + 5 + cumsum(setup.OPIntegrationTimes);
+
 
 % true parameters for simulated data
 truth.modelParameterNames = ["$\log(a/b)$"; 
@@ -60,7 +63,7 @@ truth.CM = inv(truth.G'*diag(1./truth.dhat.dvar)*truth.G);
 %% START SIMULATIONS HERE
 
 tic
-setup.nSimulations = 1e4;
+setup.nSimulations = 1e1;
 for iSim = 1:setup.nSimulations
 
 rng(); % start random number stream in one spot
@@ -162,6 +165,7 @@ end
 
 
 %% Run up multiple chains of Metropolis Hastings
+
 nSavedModels = setup.nMC/setup.seive;
 modelChains  = nan([setup.nmodel, nSavedModels, setup.nChains], "double");
 loglikChains = nan([1, nSavedModels, setup.nChains], "double");
@@ -543,8 +547,11 @@ axMatrixPlot = axes(tabMatrixPlot, 'OuterPosition', [0 0 1 1], ...
     'Units', 'normalized');
 
 simulationMeans = [result(:).modelMean]';
-[S,AX,BigAx,H,HAx] = plotmatrix(axMatrixPlot, simulationMeans);
+[~,AX,BigAx,~,HAx] = plotmatrix(axMatrixPlot, simulationMeans);
 set(AX, {'NextPlot'}, {'add'})
+BigAx.Title.String = "Simulation Results vs. True Values";
+BigAx.Title.FontSize = 20;
+BigAx.Title.FontWeight = 'normal';
 
 % Matrix Plot: true values on histograms
 for rowModelParam = 1:nModelParams
@@ -592,3 +599,26 @@ end % for iModelParam
 
 end % function inspectSimulationResults
 
+
+%% Inspect data fit
+
+function inspectDataFit(data, truth, result)
+
+fh = figure('Position', [5 5 1000 700], 'Units', 'pixels', ...
+    'Name', 'Data Fits', 'NumberTitle','off', ...
+    'Toolbar', 'none');
+tg = uitabgroup(fh, 'Position', [0 0 1 1], 'Units', 'normalized');
+
+% Baselines
+tabBL = uitab(tg, "Title", "Baselines");
+axBL = axes(tabBL, 'OuterPosition', [0 0 1 1], ...
+    'Units', 'normalized');
+axBL1 = subplot(2,1,1,axBL);
+
+
+
+end % function inspectDataFit
+
+%%
+
+inspectDataFit(data, truth, result)
