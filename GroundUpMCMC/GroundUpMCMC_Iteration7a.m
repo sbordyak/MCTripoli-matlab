@@ -24,16 +24,17 @@ truth.modelParameterNames = ["$\log(a/b)$";
                              "$\log(C_b)$"; 
                              "$re\hspace{-1pt}f_1$"; 
                              "$re\hspace{-1pt}f_2$"];
+truth.speciesNames = ["a"; "b"];
 truth.lograb = log(0.3);   % log(a/b), with (a/b) <= 1 preferred
 truth.logCb = log(2e6);  % log(Cb) log(current of isotope b)
 truth.ref1 = -1e2; % detector 1, cps
 truth.ref2 =  2e2; % detector 2, cps
 truth.model = [truth.lograb; truth.logCb; truth.ref1; truth.ref2];
 
+
 truth.ca = exp(truth.lograb + truth.logCb) + truth.ref1;
 truth.cb = exp(truth.logCb) + truth.ref2;
 
-%%
 truth.dhat.dvar = updateDataVariance(truth.model, setup);
 truth.dhat.int = [truth.ref1*ones(setup.nBLIntegrations,1);
                   truth.ref2*ones(setup.nBLIntegrations,1);
@@ -64,11 +65,105 @@ truth.CM = inv(truth.G'*diag(1./truth.dhat.dvar)*truth.G);
 
 tic
 setup.nSimulations = 1e1;
+results = []; % hard to initialize a struct.
 for iSim = 1:setup.nSimulations
 
 rng(); % start random number stream in one spot
 
+data = syntheticData(truth, setup);
+
+%% Solve maximum likelihood problem to initialize model parameters
+
+maxlik = maxLikelihood(data, setup);
+
+%% initialize model parameters and likelihoods
+
+setup.proposalCov = maxlik.CM;
+setup.nMC = 2e4; % number of MCMC trials
+setup.seive = 20;
+setup.nmodel = length(truth.model); % number of model parameters
+setup.nChains = 8;
+setup.perturbation = 10;
+
+
+%% Perturb initial model to ensure convergence
+
+[initModels, initLogLiks] = initializeChains(setup, data, maxlik);
+
+
+%% Run up multiple chains of Metropolis Hastings
+
+nSavedModels = setup.nMC/setup.seive;
+modelChains  = nan([setup.nmodel, nSavedModels, setup.nChains], "double");
+loglikChains = nan([1, nSavedModels, setup.nChains], "double");
+
+parfor iChain = 1:setup.nChains
+
+[outputModels, outputLogLiks] = ...
+    MetropolisHastings(...
+    initModels(:,iChain), ...
+    initLogLiks(iChain), ...
+    data, setup);
+
+modelChains(:,:,iChain) = outputModels;
+loglikChains(:,:,iChain) = outputLogLiks;
+
+end % parfor iChain = 1:nChains
+
+
+%% Burn in
+
+setup.burnin = 50;
+postBurnInChains = modelChains(:,setup.burnin+1:end,:);
+
+
+%% plot data and sample fits
+
+% aggregate chains
+setup.nPostBurnIn = size(postBurnInChains, 2);
+mAll = reshape(postBurnInChains, [setup.nmodel, setup.nPostBurnIn*setup.nChains]);
+result(iSim).modelMean = mean(mAll,2);
+result(iSim).modelCov = cov(mAll');
+
+% calculate chiSqare with true values
+result(iSim).r = result(iSim).modelMean - truth.model;
+result(iSim).ChiSq = result(iSim).r' * inv(result(iSim).modelCov) * result(iSim).r;
+
+% update command window
+if ~mod(iSim,10)
+    disp("Simulation number " + num2str(iSim))
+    toc
+end % if ~mod(iSim,10)
+
+
+end % for iSim = 1:nSimulations
+toc
+
+
+%% Inspect chains for agreement
+
+firstChain = modelChains(:,:,1);
+firstChainPostBurnIn = firstChain(:,setup.burnin+1:end,:);
+firstChainPostBurnIn(1:2,:) = exp(firstChainPostBurnIn(1:2,:));
+figure('Position', [50, 50, 800, 600])
+plotmatrix(firstChainPostBurnIn')
+
+makeForestPlot(postBurnInChains)
+makeECDFs(postBurnInChains)
+
+%% Inspect results for accuracy
+
+inspectSimulationResults(result, truth)
+
+%% Functions %%%%%%%%%%%%%%%%%%%%%%%%%%
+% Current script above, functions below
+
+
+%% create synthetic dataset
 % generate random BL and OP data, assemble into data vector
+
+function data = syntheticData(truth, setup)
+
 data.BL_det1 = ...
     simulateIonBeam(truth.ref1, ...
         setup.BLIntegrationTimes, ...
@@ -109,8 +204,18 @@ data.iso = [zeros(2*setup.nBLIntegrations,1);
             1*ones(setup.nOPIntegrations,1);
             2*ones(setup.nOPIntegrations,1)];
 
+data.BLTimes = cumsum(setup.BLIntegrationTimes);
+data.OPTimes = max(setup.BLTimes) + 5 + cumsum(setup.OPIntegrationTimes);
 
-%% Solve maximum likelihood problem to initialize model parameters
+end % function syntheticData
+
+%% Maximum likelihood estimate from data
+
+function maxlik = maxLikelihood(data, setup)
+% maxlik is a struct with three fields:
+%   model is the maximum likelihood model
+%   dvar is the expected variance in the data given the model parameters
+%   CM is the covariance matrix of the max likelihood model parameters
 
 isIsotopeA = data.iso == 1;
 isIsotopeB = data.iso == 2;
@@ -125,109 +230,39 @@ rough.ref2 = mean(data.int(inBL_det2));
 mRough = [rough.lograb; rough.logCb; rough.ref1; rough.ref2];
 functionToMinimize = @(m) -loglikLeastSquares(m, data, setup);
 opts = optimoptions('fminunc', 'Display', 'off');
-modelInitial = fminunc(@(m) functionToMinimize(m), mRough, opts);
+maxlik.model = fminunc(@(m) functionToMinimize(m), mRough, opts);
 %llInitial = -negLogLik;
-dvarCurrent = updateDataVariance(modelInitial, setup);
+maxlik.dvar = updateDataVariance(maxlik.model, setup);
 %dhatCurrent = evaluateModel(modelInitial, setup);
 
 % build Jacobian matrix
-G = makeG(modelInitial, data);
+G = makeG(maxlik.model, data);
 
 % least squares model parameter covariance matrix
-CM = inv(G'*diag(1./dvarCurrent)*G);
+maxlik.CM = inv(G'*diag(1./maxlik.dvar)*G);
+
+end % function maxLikelihood
 
 
+%% Initialize chains with perturbed max likelihood models
+% start MCMC chains at perturbed positions
 
-%% initialize model parameters and likelihoods
-
-setup.proposalCov = CM;
-setup.nMC = 2e4; % number of MCMC trials
-setup.seive = 20;
-
-setup.nmodel = length(modelInitial); % number of model parameters
-
-
-%% Perturb initial model to ensure convergence
-
-setup.perturbation = 10;
-setup.nChains = 8;
+function [initModels, initLogLiks] = initializeChains(setup, data, maxlik)
 
 % perturb modelCurrent by setup.perturbation standard deviations
-modelInitialVector = zeros(setup.nmodel, setup.nChains);
-llInitialVector = zeros(1, setup.nChains);
+initModels = zeros(setup.nmodel, setup.nChains);
+initLogLiks = zeros(1, setup.nChains);
 for iChain = 1:setup.nChains
-    modelInitialVector(:, iChain) = modelInitial + ...
-                   setup.perturbation*randn(4,1).*sqrt(diag(CM));
-    dhatCurrent = evaluateModel(modelInitialVector(:,iChain), setup);
-    dvarCurrent = updateDataVariance(modelInitialVector(:,iChain), setup);
-    llInitialVector(iChain) = loglik(dhatCurrent, data, dvarCurrent);
+    initModels(:, iChain) = maxlik.model + ...
+                   setup.perturbation*randn(setup.nmodel,1) .* ...
+                   sqrt(diag(maxlik.CM));
+    dhatCurrent = evaluateModel(initModels(:,iChain), setup);
+    dvarCurrent = updateDataVariance(initModels(:,iChain), setup);
+    initLogLiks(iChain) = loglik(dhatCurrent, data, dvarCurrent);
 end
 
+end % initializeChains()
 
-%% Run up multiple chains of Metropolis Hastings
-
-nSavedModels = setup.nMC/setup.seive;
-modelChains  = nan([setup.nmodel, nSavedModels, setup.nChains], "double");
-loglikChains = nan([1, nSavedModels, setup.nChains], "double");
-
-parfor iChain = 1:setup.nChains
-
-[outputModels, outputLogLiks] = ...
-    MetropolisHastings(...
-    modelInitialVector(:,iChain), ...
-    llInitialVector(iChain), ...
-    data, setup);
-
-modelChains(:,:,iChain) = outputModels;
-loglikChains(:,:,iChain) = outputLogLiks;
-
-end % parfor iChain = 1:nChains
-
-
-%% Burn in
-
-setup.burnin = 50;
-postBurnInChains = modelChains(:,setup.burnin+1:end,:);
-
-
-%% plot data and sample fits
-
-% aggregate chains
-setup.nPostBurnIn = size(postBurnInChains, 2);
-mAll = reshape(postBurnInChains, [setup.nmodel, setup.nPostBurnIn*setup.nChains]);
-result(iSim).modelMean = mean(mAll,2);
-result(iSim).modelCov = cov(mAll');
-
-% calculate chiSqare with true values
-result(iSim).r = result(iSim).modelMean - truth.model;
-result(iSim).ChiSq = result(iSim).r' * inv(result(iSim).modelCov) * result(iSim).r;
-
-if ~mod(iSim,10)
-    disp("Simulation number " + num2str(iSim))
-    toc
-end % if ~mod(iSim,10)
-
-end % for iSim = 1:nSimulations
-toc
-
-
-%% Inspect chains for agreement
-
-firstChain = modelChains(:,:,1);
-firstChainPostBurnIn = firstChain(:,setup.burnin+1:end,:);
-firstChainPostBurnIn(1:2,:) = exp(firstChainPostBurnIn(1:2,:));
-figure('Position', [50, 50, 800, 600])
-plotmatrix(firstChainPostBurnIn')
-
-makeForestPlot(postBurnInChains)
-makeECDFs(postBurnInChains)
-
-%% Inspect results for accuracy
-
-inspectSimulationResults(result, truth)
-
-%% Functions %%%%%%%%%%%%%%%%%%%%%%%%%%
-% Current script above, functions below
 
 
 %% MCMC - MetropolisHastings
@@ -600,25 +635,111 @@ end % for iModelParam
 end % function inspectSimulationResults
 
 
-%% Inspect data fit
+%% Inspect models' fit to data
 
-function inspectDataFit(data, truth, result)
+function inspectModelFitToData(data, truth, result, setup)
+% INPUTS: data and truth structs from synthetic data generation
+% result must be struct with dimension 1, e.g. result(1)
+
 
 fh = figure('Position', [5 5 1000 700], 'Units', 'pixels', ...
-    'Name', 'Data Fits', 'NumberTitle','off', ...
-    'Toolbar', 'none');
+    'Name', 'Data Fits', 'NumberTitle','off');
 tg = uitabgroup(fh, 'Position', [0 0 1 1], 'Units', 'normalized');
 
-% Baselines
+% Baselines: Data wrangling
+nDet = max(data.det);
+nBLIntegrations = sum(data.det == 1 & ~data.isOP);
+BLmodelIndices = [3 4];
+
+% Baselines: Axes setup
 tabBL = uitab(tg, "Title", "Baselines");
-axBL = axes(tabBL, 'OuterPosition', [0 0 1 1], ...
+axBLAll = axes(tabBL, 'OuterPosition', [0 0 1 1], ...
     'Units', 'normalized');
-axBL1 = subplot(2,1,1,axBL);
+
+for iDet = 1:nDet
+
+    axesiBL = subplot(nDet, 1, iDet);
+    axesiBL.NextPlot = 'add';
+    axesiBL.FontSize = 16;
+    modelIndex = BLmodelIndices(iDet);
+    BLname = "BL" + num2str(iDet);
+
+    inBL_iDet = ~data.isOP & data.det == iDet;
+
+    % Baselines: Uncertainty in model
+    iBL_2sigma = 2*sqrt(result.modelCov(modelIndex,modelIndex)) * ...
+        ones(nBLIntegrations,1);
+    iBL_Unct_X = [data.BLTimes; data.BLTimes(end:-1:1)];
+    iBL_Unct_Y = result.modelMean(modelIndex) + [-iBL_2sigma;  iBL_2sigma];
+    patch(axesiBL, 'XData', iBL_Unct_X, 'YData', iBL_Unct_Y, ...
+        'FaceColor', "#77AC30", 'EdgeColor', 'none', 'FaceAlpha', 0.3)
+    %Baselines: model
+    plot(axesiBL, data.BLTimes, ...
+        result.modelMean(modelIndex) * ones(nBLIntegrations,1), ...
+        '-', 'Color', 'r', 'LineWidth', 2)
+    %Baselines: data
+    plot(axesiBL, data.BLTimes, data.int(inBL_iDet), '.', ... 
+        'MarkerSize', 12, 'Color', lines(1))
+    %Baselines: axes labels and title
+    xlabel('Time (seconds)', 'FontSize', 20)
+    ylabel('Intensity (cps)', 'FontSize', 20)
+    text(axesiBL, 0.04, 0.9, BLname, "Units", "normalized", "FontSize", 24);
+
+end % for iBL
 
 
+% On Peak Intensity Measurements ca and cb: Data wrangling
+nIso = max(data.iso);
+nSeq = 1; % for now
+nOPIntegrations = sum(data.det == 1 & data.isOP);
+logRatioModelIndices = 1;
+logIntensityModelIndices = 2;
+
+dhat = evaluateModel(result.modelMean, setup);
+
+% On Peak: Axes setup
+tabBL = uitab(tg, "Title", "On Peak");
+axOPAll = axes(tabBL, 'OuterPosition', [0 0 1 1], ...
+    'Units', 'normalized');
+
+for iIso = 1:nIso
+
+    dataIndices = data.iso == iIso;
+    axesiIso = subplot(nIso, 1, iIso);
+    axesiIso.NextPlot = 'add';
+    axesiIso.FontSize = 16;
+
+    isoData = data.int(dataIndices);
+    isoDhat = dhat(dataIndices);
+    intensityName = "c_{" + truth.speciesNames(iIso) + "}";
+    
+    %On Peak: dhat uncertainties
+
+    G = makeG(result.modelMean, data);
+    CDhat = G*result.modelCov*G';
+    iIso_2sigma = 2*sqrt(diag(CDhat(dataIndices,dataIndices)));
+    iIso_Unct_X = [data.OPTimes; data.OPTimes(end:-1:1)];
+    iIso_Unct_Y = [isoDhat; isoDhat] + [-iIso_2sigma;  iIso_2sigma];
+    patch(axesiIso, 'XData', iIso_Unct_X, 'YData', iIso_Unct_Y, ...
+        'FaceColor', "#77AC30", 'EdgeColor', 'none', 'FaceAlpha', 0.3)
+
+    %On Peak: dhat
+    plot(axesiIso, data.OPTimes, ...
+        isoDhat, '-', 'Color', 'r', 'LineWidth', 2)
+    %On Peak: data
+    plot(axesiIso, data.OPTimes, isoData, '.', 'MarkerSize', 12, ...
+        'Color', lines(1))
+    %On Peak: axes labels and title
+    xlabel('Time (seconds)', 'FontSize', 20)
+    ylabel('Intensity (cps)', 'FontSize', 20)
+    text(axesiIso, 0.04, 0.9, intensityName, ...
+        "Units", "normalized", "FontSize", 24, 'Interpreter', 'tex');
+
+end % for iIso
 
 end % function inspectDataFit
 
+
 %%
 
-inspectDataFit(data, truth, result)
+inspectModelFitToData(data, truth, result(2), setup)
