@@ -30,7 +30,7 @@ truth.logCb = log(2e6);  % log(Cb) log(current of isotope b)
 truth.ref1 = -1e2; % detector 1, cps
 truth.ref2 =  2e2; % detector 2, cps
 truth.model = [truth.lograb; truth.logCb; truth.ref1; truth.ref2];
-
+setup.nModelParams = length(truth.model);
 
 truth.ca = exp(truth.lograb + truth.logCb) + truth.ref1;
 truth.cb = exp(truth.logCb) + truth.ref2;
@@ -56,7 +56,6 @@ truth.dhat.iso = [zeros(2*setup.nBLIntegrations,1);
             1*ones(setup.nOPIntegrations,1);
             2*ones(setup.nOPIntegrations,1)];
 
-
 truth.G = makeG(truth.model, truth.dhat);
 truth.CM = inv(truth.G'*diag(1./truth.dhat.dvar)*truth.G);
 
@@ -65,7 +64,7 @@ truth.CM = inv(truth.G'*diag(1./truth.dhat.dvar)*truth.G);
 
 tic
 setup.nSimulations = 1e1;
-results = []; % hard to initialize a struct.
+result = []; % hard to initialize a struct.
 for iSim = 1:setup.nSimulations
 
 rng(); % start random number stream in one spot
@@ -79,9 +78,8 @@ maxlik = maxLikelihood(data, setup);
 %% initialize model parameters and likelihoods
 
 setup.proposalCov = maxlik.CM;
-setup.nMC = 2e4; % number of MCMC trials
+setup.nMC = 5e4; % number of MCMC trials
 setup.seive = 20;
-setup.nmodel = length(truth.model); % number of model parameters
 setup.nChains = 8;
 setup.perturbation = 10;
 
@@ -94,7 +92,7 @@ setup.perturbation = 10;
 %% Run up multiple chains of Metropolis Hastings
 
 nSavedModels = setup.nMC/setup.seive;
-modelChains  = nan([setup.nmodel, nSavedModels, setup.nChains], "double");
+modelChains  = nan([setup.nModelParams, nSavedModels, setup.nChains], "double");
 loglikChains = nan([1, nSavedModels, setup.nChains], "double");
 
 parfor iChain = 1:setup.nChains
@@ -111,17 +109,15 @@ loglikChains(:,:,iChain) = outputLogLiks;
 end % parfor iChain = 1:nChains
 
 
-%% Burn in
+
+%% Remove burn in and calculate summary statistics
 
 setup.burnin = 50;
 postBurnInChains = modelChains(:,setup.burnin+1:end,:);
 
-
-%% plot data and sample fits
-
 % aggregate chains
 setup.nPostBurnIn = size(postBurnInChains, 2);
-mAll = reshape(postBurnInChains, [setup.nmodel, setup.nPostBurnIn*setup.nChains]);
+mAll = reshape(postBurnInChains, [setup.nModelParams, setup.nPostBurnIn*setup.nChains]);
 result(iSim).modelMean = mean(mAll,2);
 result(iSim).modelCov = cov(mAll');
 
@@ -154,6 +150,8 @@ makeECDFs(postBurnInChains)
 %% Inspect results for accuracy
 
 inspectSimulationResults(result, truth)
+inspectModelFitToData(data, truth, result(1), setup)
+
 
 %% Functions %%%%%%%%%%%%%%%%%%%%%%%%%%
 % Current script above, functions below
@@ -250,11 +248,11 @@ end % function maxLikelihood
 function [initModels, initLogLiks] = initializeChains(setup, data, maxlik)
 
 % perturb modelCurrent by setup.perturbation standard deviations
-initModels = zeros(setup.nmodel, setup.nChains);
+initModels = zeros(setup.nModelParams, setup.nChains);
 initLogLiks = zeros(1, setup.nChains);
 for iChain = 1:setup.nChains
     initModels(:, iChain) = maxlik.model + ...
-                   setup.perturbation*randn(setup.nmodel,1) .* ...
+                   setup.perturbation*randn(setup.nModelParams,1) .* ...
                    sqrt(diag(maxlik.CM));
     dhatCurrent = evaluateModel(initModels(:,iChain), setup);
     dvarCurrent = updateDataVariance(initModels(:,iChain), setup);
@@ -273,7 +271,7 @@ function [outputModels, outputLogLiks] = ...
 modelCurrent = modelInitial;
 llCurrent = llInitial;
 
-outputModels = nan([setup.nmodel, setup.nMC/setup.seive], "double");
+outputModels = nan([setup.nModelParams, setup.nMC/setup.seive], "double");
 outputLogLiks = nan([1, setup.nMC/setup.seive], "double");
 
 for iMC = 1:setup.nMC
@@ -287,7 +285,7 @@ for iMC = 1:setup.nMC
 
     % propose a new model
     modelProposed = modelCurrent + ...
-        mvnrnd( zeros(setup.nmodel,1), ...
+        mvnrnd( zeros(setup.nModelParams,1), ...
         setup.proposalCov )';
 
     % calculate residuals for old and new models
@@ -320,24 +318,43 @@ end % for iMC = 1:nMC
 end % function MetropolisHastings()
 
 
-%% evaluate this particular model
+%% evaluate a forward model
 
 function dhat = evaluateModel(m, setup)
+% m is a vector of model parameters or a matrix of model parameter samples.
+% setup is a struct containing method information.
+% dhat is a vector or matrix of predicted measured intensities.
+% If m is a matrix, columns of m are realizations of the model parameters
+% and evaluateModel returns the same number of columns in dhat
 
-    % y = slope * x       + y-intercept
-    % dhat = m(1) * setup.x + m(2);
+nSamples = size(m,2);
+nData = 2*setup.nOPIntegrations + 2*setup.nBLIntegrations;
 
-    lograb = m(1);
-    logCb  = m(2) * ones(setup.nOPIntegrations, 1);
-    ref1   = m(3);
-    ref2   = m(4);
+dhat = zeros(nData, nSamples);
+for iSample = 1:nSamples
 
-    BL_det1 = ref1*ones(setup.nBLIntegrations,1);
-    BL_det2 = ref2*ones(setup.nBLIntegrations,1);
-    OP_det1 = exp(lograb + logCb) + ref1;
-    OP_det2 = exp(logCb) + ref2;
+    % unpack model parameter vector
+    lograb = m(1, iSample);
+    logCb  = m(2, iSample);
+    ref1   = m(3, iSample);
+    ref2   = m(4, iSample);
 
-    dhat = [BL_det1; BL_det2; OP_det1; OP_det2];
+    % transform model parameters to time series when needed
+    % for log(current), reference currents, relative gains, fractionations
+    logCbt = logCb * ones(setup.nOPIntegrations, 1);
+    ref1t = ref1   * ones(setup.nBLIntegrations, 1);
+    ref2t = ref2   * ones(setup.nBLIntegrations, 1);
+
+    % model equations
+    BL_det1 = ref1t;
+    BL_det2 = ref2t;
+    OP_det1 = exp(lograb + logCbt) + ref1t;
+    OP_det2 = exp(logCbt) + ref2t;
+
+    % concatenate into single predicted data vector dhat
+    dhat(:, iSample) = [BL_det1; BL_det2; OP_det1; OP_det2];
+
+end % for iSample = 1:nSamples
 
 end % function evaluateModel
 
@@ -360,11 +377,11 @@ function dvar = updateDataVariance(m, setup)
         setup.detector);
     OP_det1_var = estimateIonBeamVariance(...
         exp(lograb + logCb), ...
-        setup.BLIntegrationTimes, ...
+        setup.OPIntegrationTimes, ...
         setup.detector);
     OP_det2_var = estimateIonBeamVariance(...
         exp(logCb), ...
-        setup.BLIntegrationTimes, ...
+        setup.OPIntegrationTimes, ...
         setup.detector);
 
     dvar = [BL_det1_var; BL_det2_var; OP_det1_var; OP_det2_var];
@@ -634,13 +651,21 @@ end % for iModelParam
 
 end % function inspectSimulationResults
 
+%% Test script:
+
+dhatmatrix = evaluateModel(mAll, setup);
+dhatSort = sort(dhatmatrix,2);
+
 
 %% Inspect models' fit to data
 
 function inspectModelFitToData(data, truth, result, setup)
 % INPUTS: data and truth structs from synthetic data generation
-% result must be struct with dimension 1, e.g. result(1)
+% modelSamples is a matrix of samples from the model parameters' posterior
+% distribution
 
+
+% dhatMatrix = evaluateModel(modelSamples, setup);
 
 fh = figure('Position', [5 5 1000 700], 'Units', 'pixels', ...
     'Name', 'Data Fits', 'NumberTitle','off');
@@ -741,5 +766,3 @@ end % function inspectDataFit
 
 
 %%
-
-inspectModelFitToData(data, truth, result(2), setup)
