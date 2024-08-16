@@ -18,7 +18,6 @@ setup.OPIntegrationTimes = ones(setup.nOPIntegrations,1);
 setup.BLTimes = cumsum(setup.BLIntegrationTimes);
 setup.OPTimes = max(setup.BLTimes) + 5 + cumsum(setup.OPIntegrationTimes);
 
-
 % true parameters for simulated data
 truth.modelParameterNames = ["$\log(a/b)$"; 
                              "$\log(C_b)$"; 
@@ -63,11 +62,11 @@ truth.CM = inv(truth.G'*diag(1./truth.dhat.dvar)*truth.G);
 %% START SIMULATIONS HERE
 
 tic
-setup.nSimulations = 1e1;
+setup.nSimulations = 1e2;
 result = []; % hard to initialize a struct.
 for iSim = 1:setup.nSimulations
 
-rng(); % start random number stream in one spot
+rng("default"); % start random number stream
 
 data = syntheticData(truth, setup);
 
@@ -136,21 +135,18 @@ end % for iSim = 1:nSimulations
 toc
 
 
-%% Inspect chains for agreement
+%% Inspect last MCMC chain and then all chains for agreement
 
-firstChain = modelChains(:,:,1);
-firstChainPostBurnIn = firstChain(:,setup.burnin+1:end,:);
-firstChainPostBurnIn(1:2,:) = exp(firstChainPostBurnIn(1:2,:));
-figure('Position', [50, 50, 800, 600])
-plotmatrix(firstChainPostBurnIn')
+figure
+plotmatrix(mAll')
 
-makeForestPlot(postBurnInChains)
-makeECDFs(postBurnInChains)
+inspectChainAgreement(postBurnInChains)
 
-%% Inspect results for accuracy
+
+%% Inspect simulation results for accuracy
 
 inspectSimulationResults(result, truth)
-inspectModelFitToData(data, truth, result(1), setup)
+inspectModelFitToData(data, truth, mAll, setup)
 
 
 %% Functions %%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -446,26 +442,32 @@ end % function G = makeG(m, data)
 
 %% make a forest plot from the sampled model parameters from multiple chains
 
-function makeForestPlot(modelChains)
+function inspectChainAgreement(modelChains)
+
+fh = figure('Position', [100 100 900 750], 'Units', 'pixels', ...
+    'Name', 'MCMC Results', 'NumberTitle','off');
+tg = uitabgroup(fh, 'Position', [0 0 1 1], 'Units', 'normalized');
+
+% FOREST PLOT TAB
+tabForest = uitab(tg, "Title", "Forest Plot");
 
 vbuffer = 0.15; % vertical buffer at top and bottom
 confidenceLevels = [0.68 0.95]; % for histogram
 
 nChains = size(modelChains,3);
-figure('Position', [1, 1, 1000, 750], 'Units', 'pixels')
-colormap(winter(nChains));
+cmap = colormap(winter(nChains));
 
 nVariables = size(modelChains, 1);
 mRows = floor(sqrt(nVariables));
 nColumns = ceil(sqrt(nVariables));
-tiledlayout(mRows,nColumns) % some function of nVariables in future
+tlayout1 = tiledlayout(tabForest, mRows,nColumns); % some function of nVariables in future
 
 intervalArray1 = zeros(2, nChains); % confidenceLevels(1)
 intervalArray2 = zeros(2, nChains); % confidenceLevels(2)
 medianArray = zeros(1, nChains); % medians
 for iVariable = 1:nVariables
 
-    nexttile
+    iax = nexttile(tlayout1);
     hold on
     
     for iChain = 1:nChains
@@ -488,49 +490,35 @@ for iVariable = 1:nVariables
 
     yCoords = vbuffer + (1-2*vbuffer)/(nChains-1) * (0:(nChains-1));
     
-    line(intervalArray1, [yCoords; yCoords], "LineWidth", 5, "Color", "#0072BD")
-    line(intervalArray2, [yCoords; yCoords], "LineWidth", 2, "Color", "#0072BD")
-    plot(medianArray, yCoords, 'o', 'MarkerSize', 8, ...
+    line(iax, intervalArray1, [yCoords; yCoords], "LineWidth", 5, "Color", "#0072BD")
+    line(iax, intervalArray2, [yCoords; yCoords], "LineWidth", 2, "Color", "#0072BD")
+    plot(iax, medianArray, yCoords, 'o', 'MarkerSize', 8, ...
         'MarkerFaceColor', "#A2142F", 'MarkerEdgeColor', 'k')
 
     ylim([0, 1])
-    set(gca,'YTickLabel',[]);
+    set(iax,'YTickLabel',[]);
 
 end % for iVariable
 
-
-
-end % function makeForestPlot
-
-
-%%  Compare empirical cdfs
-
-function makeECDFs(modelChains)
-
-nChains = size(modelChains,3);
-figure('Position', [1, 1, 1000, 750], 'Units', 'pixels')
-cmap = colormap(winter(nChains));
-
-nVariables = size(modelChains, 1);
-mRows = floor(sqrt(nVariables));
-nColumns = ceil(sqrt(nVariables));
-tiledlayout(mRows,nColumns) % some function of nVariables in future
+% ECDFs TAB
+tabECDF = uitab(tg, "Title", "ECDFs");
+tlayout2 = tiledlayout(tabECDF, mRows,nColumns); % some function of nVariables in future
 
 for iVariable = 1:nVariables
 
-    nexttile
+    iax = nexttile(tlayout2);
     hold on
     
     for iChain = 1:nChains
 
         [F, x] = ecdf(modelChains(iVariable, :, iChain));
-        plot(x, F, 'LineWidth', 2, 'Color', cmap(iChain,:)) 
+        plot(iax, x, F, 'LineWidth', 2, 'Color', cmap(iChain,:)) 
 
-    end % function makeECDFs
+    end % for iChain
 
 end % for iVariable
 
-end % function makeECDFs
+end % function inspectChainAgreement
 
 
 %% Find shortest empirical confidence interval among samples of distribution
