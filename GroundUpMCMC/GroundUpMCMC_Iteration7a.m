@@ -651,22 +651,27 @@ end % for iModelParam
 
 end % function inspectSimulationResults
 
-%% Test script:
-
-dhatmatrix = evaluateModel(mAll, setup);
-dhatSort = sort(dhatmatrix,2);
-
 
 %% Inspect models' fit to data
 
-function inspectModelFitToData(data, truth, result, setup)
+function inspectModelFitToData(data, truth, modelSamples, setup)
 % INPUTS: data and truth structs from synthetic data generation
 % modelSamples is a matrix of samples from the model parameters' posterior
 % distribution
 
+% use samples from model posterior distribution to forward-model data
+dhatMatrix = evaluateModel(modelSamples, setup);
+dhatMean = mean(dhatMatrix,2);
+dhatSort = sort(dhatMatrix,2);
+ndhat = size(dhatSort,1);
+dhatCIs = zeros(ndhat,2);
+confidenceLevel = 0.95;
+for idhat = 1:ndhat
+    dhatCIs(idhat,:) = findShortestInterval(dhatSort(idhat,:), ...
+                                         confidenceLevel);
+end % for idhat
 
-% dhatMatrix = evaluateModel(modelSamples, setup);
-
+% create figure
 fh = figure('Position', [5 5 1000 700], 'Units', 'pixels', ...
     'Name', 'Data Fits', 'NumberTitle','off');
 tg = uitabgroup(fh, 'Position', [0 0 1 1], 'Units', 'normalized');
@@ -682,28 +687,27 @@ axBLAll = axes(tabBL, 'OuterPosition', [0 0 1 1], ...
     'Units', 'normalized');
 
 for iDet = 1:nDet
-
+    
+    % axes setup
     axesiBL = subplot(nDet, 1, iDet);
     axesiBL.NextPlot = 'add';
     axesiBL.FontSize = 16;
-    modelIndex = BLmodelIndices(iDet);
     BLname = "BL" + num2str(iDet);
 
-    inBL_iDet = ~data.isOP & data.det == iDet;
+    % indices into data-length vectors for this BL
+    dataIndices = ~data.isOP & data.det == iDet;
 
     % Baselines: Uncertainty in model
-    iBL_2sigma = 2*sqrt(result.modelCov(modelIndex,modelIndex)) * ...
-        ones(nBLIntegrations,1);
     iBL_Unct_X = [data.BLTimes; data.BLTimes(end:-1:1)];
-    iBL_Unct_Y = result.modelMean(modelIndex) + [-iBL_2sigma;  iBL_2sigma];
+    iBL_Unct_Y = [dhatCIs(dataIndices,1); dhatCIs(dataIndices,2)];
     patch(axesiBL, 'XData', iBL_Unct_X, 'YData', iBL_Unct_Y, ...
         'FaceColor', "#77AC30", 'EdgeColor', 'none', 'FaceAlpha', 0.3)
     %Baselines: model
     plot(axesiBL, data.BLTimes, ...
-        result.modelMean(modelIndex) * ones(nBLIntegrations,1), ...
+        dhatMean(dataIndices), ...
         '-', 'Color', 'r', 'LineWidth', 2)
     %Baselines: data
-    plot(axesiBL, data.BLTimes, data.int(inBL_iDet), '.', ... 
+    plot(axesiBL, data.BLTimes, data.int(dataIndices), '.', ... 
         'MarkerSize', 12, 'Color', lines(1))
     %Baselines: axes labels and title
     xlabel('Time (seconds)', 'FontSize', 20)
@@ -715,12 +719,6 @@ end % for iBL
 
 % On Peak Intensity Measurements ca and cb: Data wrangling
 nIso = max(data.iso);
-nSeq = 1; % for now
-nOPIntegrations = sum(data.det == 1 & data.isOP);
-logRatioModelIndices = 1;
-logIntensityModelIndices = 2;
-
-dhat = evaluateModel(result.modelMean, setup);
 
 % On Peak: Axes setup
 tabBL = uitab(tg, "Title", "On Peak");
@@ -728,32 +726,27 @@ axOPAll = axes(tabBL, 'OuterPosition', [0 0 1 1], ...
     'Units', 'normalized');
 
 for iIso = 1:nIso
-
-    dataIndices = data.iso == iIso;
+    
     axesiIso = subplot(nIso, 1, iIso);
     axesiIso.NextPlot = 'add';
     axesiIso.FontSize = 16;
-
-    isoData = data.int(dataIndices);
-    isoDhat = dhat(dataIndices);
     intensityName = "c_{" + truth.speciesNames(iIso) + "}";
     
-    %On Peak: dhat uncertainties
+    % indices into data-length vectors for this OP
+    dataIndices = data.iso == iIso;
 
-    G = makeG(result.modelMean, data);
-    CDhat = G*result.modelCov*G';
-    iIso_2sigma = 2*sqrt(diag(CDhat(dataIndices,dataIndices)));
+    %On Peak: dhat uncertainties
     iIso_Unct_X = [data.OPTimes; data.OPTimes(end:-1:1)];
-    iIso_Unct_Y = [isoDhat; isoDhat] + [-iIso_2sigma;  iIso_2sigma];
+    iIso_Unct_Y = [dhatCIs(dataIndices,1); dhatCIs(dataIndices,2)];
     patch(axesiIso, 'XData', iIso_Unct_X, 'YData', iIso_Unct_Y, ...
         'FaceColor', "#77AC30", 'EdgeColor', 'none', 'FaceAlpha', 0.3)
 
-    %On Peak: dhat
+    %On Peak: mean dhat
     plot(axesiIso, data.OPTimes, ...
-        isoDhat, '-', 'Color', 'r', 'LineWidth', 2)
-    %On Peak: data
-    plot(axesiIso, data.OPTimes, isoData, '.', 'MarkerSize', 12, ...
-        'Color', lines(1))
+        dhatMean(dataIndices), '-', 'Color', 'r', 'LineWidth', 2)
+    %On Peak: measured data
+    plot(axesiIso, data.OPTimes, data.int(dataIndices), '.', ...
+        'MarkerSize', 12, 'Color', lines(1))
     %On Peak: axes labels and title
     xlabel('Time (seconds)', 'FontSize', 20)
     ylabel('Intensity (cps)', 'FontSize', 20)
@@ -763,6 +756,3 @@ for iIso = 1:nIso
 end % for iIso
 
 end % function inspectDataFit
-
-
-%%
