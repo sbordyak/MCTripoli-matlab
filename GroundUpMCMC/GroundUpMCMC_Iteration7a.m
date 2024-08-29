@@ -66,7 +66,7 @@ setup.nSimulations = 1e2;
 result = []; % hard to initialize a struct.
 for iSim = 1:setup.nSimulations
 
-rng("default"); % start random number stream
+rng(); % start random number stream
 
 data = syntheticData(truth, setup);
 
