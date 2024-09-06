@@ -4,7 +4,9 @@
 % 7a. Add multiple chains for QAQC, rafactor script into functions, and
 % perform multiple simulations to test if results consistent with synthetic
 % data
-% 7b. Add time-varying ion intensity
+% 7b. Add time-varying ion intensity with a cubic spline
+
+addpath("../matcodes/") % for bbase()
 
 %% synthetic data setup
 
@@ -21,17 +23,29 @@ setup.OPTimes = max(setup.BLTimes) + 5 + cumsum(setup.OPIntegrationTimes);
 
 % true parameters for simulated data
 truth.modelParameterNames = ["$\log(a/b)$"; 
-                             "$\log(C_b)$"; 
+                             "$C_1$"; "$C_2$"; "$C_3$"; "$C_4$"; "$C_5$"; 
                              "$re\hspace{-1pt}f_1$"; 
                              "$re\hspace{-1pt}f_2$"];
 truth.speciesNames = ["a"; "b"];
 truth.lograb = log(0.3);   % log(a/b), with (a/b) <= 1 preferred
-truth.logCb = log(beamFunction(setup.OPTimes));  % log(Cb)
+truth.splinem = [     % nseg = 2, bdeg = 3, t = 106:205
+    1950326.80611767
+    2027795.08810262
+    1932836.34079275
+    1843414.88250051
+    1901305.38150325
+    ];
+setup.nseg = 2; % used for creating truth.splinem
+setup.bdeg = 3; % ditto
 truth.ref1 = -1e2; % detector 1, cps
 truth.ref2 =  2e2; % detector 2, cps
-truth.model = [truth.lograb; truth.logCb; truth.ref1; truth.ref2];
+truth.BL = [truth.ref1; truth.ref2];
+truth.model = [truth.lograb; truth.splinem; truth.ref1; truth.ref2];
 setup.nModelParams = length(truth.model);
 
+B = bbase(setup.OPTimes, min(setup.OPTimes), max(setup.OPTimes), ...
+    setup.nseg, setup.bdeg);
+truth.logCb = log(B*truth.splinem);
 truth.ca = exp(truth.lograb + truth.logCb) + truth.ref1;
 truth.cb = exp(truth.logCb) + truth.ref2;
 
