@@ -227,6 +227,38 @@ data.OPTimes = max(setup.BLTimes) + 5 + cumsum(setup.OPIntegrationTimes);
 
 end % function syntheticData
 
+
+%% assemble design matrix G from model and data
+% G is the linearized design matrix in d = Gm
+
+function G = makeG(m, data, B)
+
+% unpack model parameter vector
+lograb = m(1);
+logms  = m(2:6);
+ref1   = m(7);
+ref2   = m(8);
+
+isIsotopeA = data.iso == 1;
+isIsotopeB = data.iso == 2;
+
+G = zeros(length(data.int), 4);
+
+% derivative of ca wrt log(a/b): dca__dlogra_b
+G(isIsotopeA, 1) = exp(m(1)+m(2));
+
+% derivative of ca wrt log(Cb)
+G(isIsotopeA, 2) = exp(m(1)+m(2));
+
+% derivative of cb wrt log(Cb)
+G(isIsotopeB, 2) = exp(m(2));
+
+G(data.det == 1, 3) = 1; % derivative wrt ref1
+G(data.det == 2, 4) = 1; % derivative wrt ref2
+
+end % function G = makeG(m, data)
+
+
 %% Maximum likelihood estimate from data
 
 function maxlik = maxLikelihood(data, setup)
@@ -238,7 +270,8 @@ function maxlik = maxLikelihood(data, setup)
 isIsotopeA = data.iso == 1;
 isIsotopeB = data.iso == 2;
 rough.lograb = mean(log(data.int(isIsotopeA)./data.int(isIsotopeB)));
-rough.logCb = max(1, mean(real(log(data.int(isIsotopeB)))));
+rough.logCb = ones(setup.nseg + setup.bdeg,1) * ...
+              max(1, mean(real(log(data.int(isIsotopeB)))));
 
 inBL_det1 = ~data.isOP & data.det == 1;
 inBL_det2 = ~data.isOP & data.det == 2;
@@ -437,31 +470,6 @@ function ll = loglikLeastSquares(m, data, setup)
     ll = loglik(dhat, data, dvar);
 
 end % function loglikLeastSquares
-
-
-%% assemble design matrix G from model and data
-% G is the linearized design matrix in d = Gm
-
-function G = makeG(m, data)
-
-isIsotopeA = data.iso == 1;
-isIsotopeB = data.iso == 2;
-
-G = zeros(length(data.int), 4);
-
-% derivative of ca wrt log(a/b): dca__dlogra_b
-G(isIsotopeA, 1) = exp(m(1)+m(2));
-
-% derivative of ca wrt log(Cb)
-G(isIsotopeA, 2) = exp(m(1)+m(2));
-
-% derivative of cb wrt log(Cb)
-G(isIsotopeB, 2) = exp(m(2));
-
-G(data.det == 1, 3) = 1; % derivative wrt ref1
-G(data.det == 2, 4) = 1; % derivative wrt ref2
-
-end % function G = makeG(m, data)
 
 
 %% make a forest plot from the sampled model parameters from multiple chains
