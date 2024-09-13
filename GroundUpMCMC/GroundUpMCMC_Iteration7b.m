@@ -28,28 +28,28 @@ truth.modelParameterNames = ["$\log(a/b)$";
                              "$re\hspace{-1pt}f_2$"];
 truth.speciesNames = ["a"; "b"];
 truth.lograb = log(0.3);   % log(a/b), with (a/b) <= 1 preferred
-truth.splinem = [     % nseg = 2, bdeg = 3, t = 106:205
-    1950326.80611767
-    2027795.08810262
-    1932836.34079275
-    1843414.88250051
-    1901305.38150325
+truth.logmspl = [     % nseg = 2, bdeg = 3, t = 106:205
+    14.4846439892590
+    14.5251376191125
+    14.4721275963024
+    14.4292231240153
+    14.4531727595166
     ];
 setup.nseg = 2; % used for creating truth.splinem
 setup.bdeg = 3; % ditto
 truth.ref1 = -1e2; % detector 1, cps
 truth.ref2 =  2e2; % detector 2, cps
 truth.BL = [truth.ref1; truth.ref2];
-truth.model = [truth.lograb; truth.splinem; truth.ref1; truth.ref2];
+truth.model = [truth.lograb; truth.logmspl; truth.ref1; truth.ref2];
 setup.nModelParams = length(truth.model);
 
 B = bbase(setup.OPTimes, min(setup.OPTimes), max(setup.OPTimes), ...
     setup.nseg, setup.bdeg);
-truth.logCb = log(B*truth.splinem);
+truth.logCb = B*truth.logmspl;
 truth.ca = exp(truth.lograb + truth.logCb) + truth.ref1;
 truth.cb = exp(truth.logCb) + truth.ref2;
 
-truth.dhat.dvar = updateDataVariance(truth.model, setup);
+truth.dhat.dvar = updateDataVariance(truth.model, setup, B);
 truth.dhat.int = [truth.ref1*ones(setup.nBLIntegrations,1);
                   truth.ref2*ones(setup.nBLIntegrations,1);
                   truth.ca.*ones(setup.nOPIntegrations,1);
@@ -69,6 +69,7 @@ truth.dhat.det = [1*ones(setup.nBLIntegrations,1);
 truth.dhat.iso = [zeros(2*setup.nBLIntegrations,1);
             1*ones(setup.nOPIntegrations,1);
             2*ones(setup.nOPIntegrations,1)];
+truth.dhat.B = B;
 
 truth.G = makeG(truth.model, truth.dhat);
 truth.CM = inv(truth.G'*diag(1./truth.dhat.dvar)*truth.G);
@@ -77,13 +78,13 @@ truth.CM = inv(truth.G'*diag(1./truth.dhat.dvar)*truth.G);
 %% START SIMULATIONS HERE
 
 tic
-setup.nSimulations = 1;
+setup.nSimulations = 100;
 result = []; % hard to initialize a struct.
 for iSim = 1:setup.nSimulations
 
 rng(); % start random number stream
 
-data = syntheticData(truth, setup);
+data = syntheticData(truth, setup, B);
 
 %% Solve maximum likelihood problem to initialize model parameters
 
@@ -92,7 +93,7 @@ maxlik = maxLikelihood(data, setup);
 %% initialize model parameters and likelihoods
 
 setup.proposalCov = maxlik.CM;
-setup.nMC = 5e4; % number of MCMC trials
+setup.nMC = 1e5; % number of MCMC trials
 setup.seive = 20;
 setup.nChains = 8;
 setup.perturbation = 10;
@@ -180,7 +181,7 @@ end % beamFunction
 %% create synthetic dataset
 % generate random BL and OP data, assemble into data vector
 
-function data = syntheticData(truth, setup)
+function data = syntheticData(truth, setup, B)
 
 data.BL_det1 = ...
     simulateIonBeam(truth.ref1, ...
@@ -225,36 +226,39 @@ data.iso = [zeros(2*setup.nBLIntegrations,1);
 data.BLTimes = cumsum(setup.BLIntegrationTimes);
 data.OPTimes = max(setup.BLTimes) + 5 + cumsum(setup.OPIntegrationTimes);
 
+data.B = B; % tuck spline basis matrix B into data struct
+
 end % function syntheticData
 
 
 %% assemble design matrix G from model and data
 % G is the linearized design matrix in d = Gm
 
-function G = makeG(m, data, B)
+function G = makeG(m, data)
 
 % unpack model parameter vector
-lograb = m(1);
-logms  = m(2:6);
-ref1   = m(7);
-ref2   = m(8);
+lograb    = m(1);
+logmspl   = m(2:6);
+%ref1      = m(7);
+%ref2      = m(8);
+B = data.B;
 
 isIsotopeA = data.iso == 1;
 isIsotopeB = data.iso == 2;
 
-G = zeros(length(data.int), 4);
+G = zeros(length(data.int), length(m));
 
 % derivative of ca wrt log(a/b): dca__dlogra_b
-G(isIsotopeA, 1) = exp(m(1)+m(2));
+G(isIsotopeA, 1) = exp(lograb + B*logmspl);
 
 % derivative of ca wrt log(Cb)
-G(isIsotopeA, 2) = exp(m(1)+m(2));
+G(isIsotopeA, 2:6) = B .* exp(lograb + B*logmspl);
 
 % derivative of cb wrt log(Cb)
-G(isIsotopeB, 2) = exp(m(2));
+G(isIsotopeB, 2:6) = B .* exp(B*logmspl);
 
-G(data.det == 1, 3) = 1; % derivative wrt ref1
-G(data.det == 2, 4) = 1; % derivative wrt ref2
+G(data.det == 1, 7) = 1; % derivative wrt ref1
+G(data.det == 2, 8) = 1; % derivative wrt ref2
 
 end % function G = makeG(m, data)
 
@@ -283,7 +287,7 @@ functionToMinimize = @(m) -loglikLeastSquares(m, data, setup);
 opts = optimoptions('fminunc', 'Display', 'off');
 maxlik.model = fminunc(@(m) functionToMinimize(m), mRough, opts);
 %llInitial = -negLogLik;
-maxlik.dvar = updateDataVariance(maxlik.model, setup);
+maxlik.dvar = updateDataVariance(maxlik.model, setup, data.B);
 %dhatCurrent = evaluateModel(modelInitial, setup);
 
 % build Jacobian matrix
@@ -307,8 +311,8 @@ for iChain = 1:setup.nChains
     initModels(:, iChain) = maxlik.model + ...
                    setup.perturbation*randn(setup.nModelParams,1) .* ...
                    sqrt(diag(maxlik.CM));
-    dhatCurrent = evaluateModel(initModels(:,iChain), setup);
-    dvarCurrent = updateDataVariance(initModels(:,iChain), setup);
+    dhatCurrent = evaluateModel(initModels(:,iChain), setup, data.B);
+    dvarCurrent = updateDataVariance(initModels(:,iChain), setup, data.B);
     initLogLiks(iChain) = loglik(dhatCurrent, data, dvarCurrent);
 end
 
@@ -342,10 +346,10 @@ for iMC = 1:setup.nMC
         setup.proposalCov )';
 
     % calculate residuals for old and new models
-    dhatProposed = evaluateModel(modelProposed, setup);
+    dhatProposed = evaluateModel(modelProposed, setup, data.B);
 
     % create data covariance with current and proposed noise terms
-    dvarProposed = updateDataVariance(modelProposed, setup);
+    dvarProposed = updateDataVariance(modelProposed, setup, data.B);
 
     % calculate log-likelihoods of current and proposed samples
     llProposed = loglik(dhatProposed, data, dvarProposed);
@@ -373,7 +377,7 @@ end % function MetropolisHastings()
 
 %% evaluate a forward model
 
-function dhat = evaluateModel(m, setup)
+function dhat = evaluateModel(m, setup, B)
 % m is a vector of model parameters or a matrix of model parameter samples.
 % setup is a struct containing method information.
 % dhat is a vector or matrix of predicted measured intensities.
@@ -387,14 +391,14 @@ dhat = zeros(nData, nSamples);
 for iSample = 1:nSamples
 
     % unpack model parameter vector
-    lograb = m(1, iSample);
-    logCb  = m(2, iSample);
-    ref1   = m(3, iSample);
-    ref2   = m(4, iSample);
+    lograb    = m(1, iSample);
+    logmspl   = m(2:6, iSample);
+    ref1      = m(7, iSample);
+    ref2      = m(8, iSample);
 
     % transform model parameters to time series when needed
     % for log(current), reference currents, relative gains, fractionations
-    logCbt = logCb * ones(setup.nOPIntegrations, 1);
+    logCbt = B*logmspl;
     ref1t = ref1   * ones(setup.nBLIntegrations, 1);
     ref2t = ref2   * ones(setup.nBLIntegrations, 1);
 
@@ -414,11 +418,11 @@ end % function evaluateModel
 
 %% update data covariance matrix
 
-function dvar = updateDataVariance(m, setup)
+function dvar = updateDataVariance(m, setup, B)
 
     % estimate ion beam variances from model parameters
     lograb = m(1);
-    logCb = m(2);
+    logCb = B*m(2:6);
 
     BL_det1_var = estimateIonBeamVariance(...
         zeros(setup.nBLIntegrations,1), ...
@@ -465,8 +469,8 @@ end % function loglik
 
 function ll = loglikLeastSquares(m, data, setup)
 
-    dhat = evaluateModel(m, setup);
-    dvar = updateDataVariance(m, setup);
+    dhat = evaluateModel(m, setup, data.B);
+    dvar = updateDataVariance(m, setup, data.B);
     ll = loglik(dhat, data, dvar);
 
 end % function loglikLeastSquares
@@ -491,7 +495,7 @@ cmap = colormap(winter(nChains));
 
 nVariables = size(modelChains, 1);
 mRows = floor(sqrt(nVariables));
-nColumns = ceil(sqrt(nVariables));
+nColumns = ceil(nVariables/mRows);
 tlayout1 = tiledlayout(tabForest, mRows,nColumns); % some function of nVariables in future
 
 intervalArray1 = zeros(2, nChains); % confidenceLevels(1)
@@ -610,7 +614,7 @@ xVec = linspace(xRange(1), xRange(2), 500);
 plot(axChiSq, xVec, chi2pdf(xVec, nModelParams), 'LineWidth', 2)
 set(axChiSq, 'FontSize', 16)
 xlabel(axChiSq, '$x$', 'FontSize', 24, 'Interpreter', 'latex')
-ylabel(axChiSq, '$f_4(x)$', 'FontSize', 24, 'Interpreter', 'latex')
+ylabel(axChiSq, '$f_8(x)$', 'FontSize', 24, 'Interpreter', 'latex')
 title(axChiSq, '$\chi^2$ for Simulations', 'FontSize', 26, 'Interpreter', 'latex')
 
 % Matrix Plot: setup
@@ -680,7 +684,7 @@ function inspectModelFitToData(data, truth, modelSamples, setup)
 % distribution
 
 % use samples from model posterior distribution to forward-model data
-dhatMatrix = evaluateModel(modelSamples, setup);
+dhatMatrix = evaluateModel(modelSamples, setup, data.B);
 dhatMean = mean(dhatMatrix,2);
 dhatSort = sort(dhatMatrix,2);
 ndhat = size(dhatSort,1);
