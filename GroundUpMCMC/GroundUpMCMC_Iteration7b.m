@@ -27,7 +27,7 @@ truth.modelParameterNames = ["$\log(a/b)$";
                              "$re\hspace{-1pt}f_1$"; 
                              "$re\hspace{-1pt}f_2$"];
 truth.speciesNames = ["a"; "b"];
-truth.lograb = log(0.3);   % log(a/b), with (a/b) <= 1 preferred
+truth.lograb = log(1);   % log(a/b), with (a/b) <= 1 preferred
 truth.logmspl = [     % nseg = 2, bdeg = 3, t = 106:205
     14.4846439892590
     14.5251376191125
@@ -127,7 +127,7 @@ end % parfor iChain = 1:nChains
 
 %% Remove burn in and calculate summary statistics
 
-setup.burnin = 50;
+setup.burnin = ceil(0.1 * nSavedModels);
 postBurnInChains = modelChains(:,setup.burnin+1:end,:);
 
 % aggregate chains
@@ -161,7 +161,10 @@ inspectChainAgreement(postBurnInChains)
 
 %% Inspect simulation results for accuracy
 
-inspectSimulationResults(result, truth)
+if setup.nSimulations > 1
+    inspectSimulationResults(result, truth)
+end
+
 inspectModelFitToData(data, truth, mAll, setup)
 
 
@@ -695,6 +698,23 @@ for idhat = 1:ndhat
                                          confidenceLevel);
 end % for idhat
 
+% add data variance and dhatMatrix to estimate posterior predictive
+nModelPosteriorSamples = size(modelSamples,2);
+dtildeMatrix = zeros(size(dhatMatrix));
+for iSample = 1:nModelPosteriorSamples
+    idvar = updateDataVariance(modelSamples(:,iSample), setup, data.B);
+    aleatoricNoise = sqrt(idvar) .* randn(ndhat,1);
+    dtildeMatrix(:,iSample) = dhatMatrix(:,iSample) + aleatoricNoise;
+end
+
+% sort and estimate shortest prediction interval
+dtildeSort = sort(dtildeMatrix,2);
+dhatPIs = zeros(ndhat,2);
+for idhat = 1:ndhat
+    dhatPIs(idhat,:) = findShortestInterval(dtildeSort(idhat,:), ...
+                                         confidenceLevel);
+end % for idhat
+
 % create figure
 fh = figure('Position', [5 5 1000 700], 'Units', 'pixels', ...
     'Name', 'Data Fits', 'NumberTitle','off');
@@ -759,11 +779,17 @@ for iIso = 1:nIso
     % indices into data-length vectors for this OP
     dataIndices = data.iso == iIso;
 
-    %On Peak: dhat uncertainties
+    %On Peak: dhat uncertainties (prediction interval)
     iIso_Unct_X = [data.OPTimes; data.OPTimes(end:-1:1)];
-    iIso_Unct_Y = [dhatCIs(dataIndices,1); dhatCIs(dataIndices,2)];
+    iIso_Unct_Y = [dhatPIs(dataIndices,1); flipud(dhatPIs(dataIndices,2))];
     patch(axesiIso, 'XData', iIso_Unct_X, 'YData', iIso_Unct_Y, ...
-        'FaceColor', "#77AC30", 'EdgeColor', 'none', 'FaceAlpha', 0.3)
+        'FaceColor', "#ffaaaa", 'EdgeColor', 'none', 'FaceAlpha', 0.5)
+
+    %On Peak: dhat uncertainties (confidence interval)
+    iIso_Unct_X = [data.OPTimes; data.OPTimes(end:-1:1)];
+    iIso_Unct_Y = [dhatCIs(dataIndices,1); flipud(dhatCIs(dataIndices,2))];
+    patch(axesiIso, 'XData', iIso_Unct_X, 'YData', iIso_Unct_Y, ...
+        'FaceColor', "#77AC30", 'EdgeColor', 'none', 'FaceAlpha', 0.8)
 
     %On Peak: mean dhat
     plot(axesiIso, data.OPTimes, ...
