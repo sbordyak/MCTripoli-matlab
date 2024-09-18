@@ -27,7 +27,7 @@ truth.modelParameterNames = ["$\log(a/b)$";
                              "$re\hspace{-1pt}f_1$"; 
                              "$re\hspace{-1pt}f_2$"];
 truth.speciesNames = ["a"; "b"];
-truth.lograb = log(1);   % log(a/b), with (a/b) <= 1 preferred
+truth.lograb = log(0.01);   % log(a/b), with (a/b) <= 1 preferred
 truth.logmspl = [     % nseg = 2, bdeg = 3, t = 106:205
     14.4846439892590
     14.5251376191125
@@ -78,7 +78,7 @@ truth.CM = inv(truth.G'*diag(1./truth.dhat.dvar)*truth.G);
 %% START SIMULATIONS HERE
 
 tic
-setup.nSimulations = 100;
+setup.nSimulations = 1;
 result = []; % hard to initialize a struct.
 for iSim = 1:setup.nSimulations
 
@@ -93,7 +93,7 @@ maxlik = maxLikelihood(data, setup);
 %% initialize model parameters and likelihoods
 
 setup.proposalCov = maxlik.CM;
-setup.nMC = 1e5; % number of MCMC trials
+setup.nMC = 1e6; % number of MCMC trials
 setup.seive = 20;
 setup.nChains = 8;
 setup.perturbation = 10;
@@ -127,7 +127,7 @@ end % parfor iChain = 1:nChains
 
 %% Remove burn in and calculate summary statistics
 
-setup.burnin = ceil(0.1 * nSavedModels);
+setup.burnin = ceil(0.2 * nSavedModels);
 postBurnInChains = modelChains(:,setup.burnin+1:end,:);
 
 % aggregate chains
@@ -276,7 +276,7 @@ function maxlik = maxLikelihood(data, setup)
 
 isIsotopeA = data.iso == 1;
 isIsotopeB = data.iso == 2;
-rough.lograb = mean(log(data.int(isIsotopeA)./data.int(isIsotopeB)));
+rough.lograb = real(mean(log(data.int(isIsotopeA)./data.int(isIsotopeB))));
 rough.logCb = ones(setup.nseg + setup.bdeg,1) * ...
               max(1, mean(real(log(data.int(isIsotopeB)))));
 
@@ -740,6 +740,12 @@ for iDet = 1:nDet
 
     % indices into data-length vectors for this BL
     dataIndices = ~data.isOP & data.det == iDet;
+
+    %Baselines: dhat uncertainties (prediction interval)
+    iIso_Unct_X = [data.BLTimes; data.BLTimes(end:-1:1)];
+    iIso_Unct_Y = [dhatPIs(dataIndices,1); flipud(dhatPIs(dataIndices,2))];
+    patch(axesiBL, 'XData', iIso_Unct_X, 'YData', iIso_Unct_Y, ...
+        'FaceColor', "#ffaaaa", 'EdgeColor', 'none', 'FaceAlpha', 0.5)
 
     % Baselines: Uncertainty in model
     iBL_Unct_X = [data.BLTimes; data.BLTimes(end:-1:1)];
