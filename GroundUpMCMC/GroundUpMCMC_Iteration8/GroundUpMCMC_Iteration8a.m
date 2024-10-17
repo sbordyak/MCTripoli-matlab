@@ -24,5 +24,7 @@ if setup.dataMode == "synthetic"
     method = parseTIMSAM(methodsFolder + methodName + ".TIMSAM");
     method = processMethod(method, massSpec);
 
+    
+
 end
 
