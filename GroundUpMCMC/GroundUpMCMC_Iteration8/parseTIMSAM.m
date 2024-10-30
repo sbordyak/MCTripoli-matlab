@@ -31,7 +31,7 @@ end
 theStruct = theStruct.Children; % discard top level node
 
 % method name
-method.methodName = extractBefore(filename, ".");
+[~, method.methodName, ~] = fileparts(filename);
 
 % parse names/specifiers for each xml block
 nodeNames = string({theStruct.Name});
