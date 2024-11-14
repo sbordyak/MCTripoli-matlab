@@ -1,6 +1,6 @@
 classdef faradayModel < collectorModel
-    %IONCOUNTERMODEL an ion counter
-    %   Detailed explanation goes here
+    %FARADAYMODEL an Faraday collector
+    %   Amplifier type and resistance if applicable
     
     properties
         ampType                faradayAmpType   % resistance or ATONA

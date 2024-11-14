@@ -1,6 +1,6 @@
 classdef ionCounterModel < collectorModel
     %IONCOUNTERMODEL an ion counter
-    %   Detailed explanation goes here
+    %   Detector type (Daly or SEM), dead time, dark noise
     
     properties
         type        ionCounterType   % Daly or SEM

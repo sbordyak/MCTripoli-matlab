@@ -1,12 +1,12 @@
-function method = processMethod(method, massSpec)
+function method = processMethod(method, collectorNames)
 %PROCESSMETHOD Extract useful information from parsed method structure
 %
 %   Then append the useful info to the method structure
 
-
-collectorNames = convertCharsToStrings( ...
-    massSpec.collectorArray.Properties.RowNames' ...
-    );
+% removed 11-11-24 -- only collectorNames needed?
+%collectorNames = convertCharsToStrings( ...
+%    massSpec.collectorArray.Properties.RowNames' ...
+%    );
 
 nSeq = size(method.onpeaks, 2);
 OPnames = [method.onpeaks.Name]';
