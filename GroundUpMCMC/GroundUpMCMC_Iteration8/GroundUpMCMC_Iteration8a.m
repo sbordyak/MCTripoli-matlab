@@ -17,14 +17,8 @@ massSpec = massSpecModel("PhoenixKansas_1e12");
 
 if setup.dataMode == "synthetic"
     
-    % specify method file location and name
-    methodsFolder = "./massSpecMethods/";
-    methodName = "TwoCollectorStaticPb";
-    
-    method = parseTIMSAM(methodsFolder + methodName + ".TIMSAM");
-    method = processMethod(method, massSpec);
-
-    
+    method = parseTIMSAM(setup.methodsFolder + setup.methodName + ".TIMSAM");
+    method = processMethod(method, massSpec.getCollectorNames);
 
 end
 

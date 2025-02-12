@@ -3,11 +3,6 @@ function method = processMethod(method, collectorNames)
 %
 %   Then append the useful info to the method structure
 
-% removed 11-11-24 -- only collectorNames needed?
-%collectorNames = convertCharsToStrings( ...
-%    massSpec.collectorArray.Properties.RowNames' ...
-%    );
-
 nSeq = size(method.onpeaks, 2);
 OPnames = [method.onpeaks.Name]';
 nFara = size(collectorNames,2);
@@ -23,12 +18,19 @@ else
     disp("Axial Position Detector Not Recognized!!")
 end
 
+% make blank table for OnPeak Sequence Table "OPTable"
 OPT = table('Size', [nSeq, nFara], ...
                 'VariableTypes', repelem("string", nFara), ...
                 'VariableNames', collectorNames, ...
                 'RowNames', OPnames);
 OPTable = fillmissing(OPT, 'constant', ""); 
 OPMasses = fillmissing(OPT, 'constant', "NaN"); clear OPT
+
+% make blank table for OnPeak integration time table "OPIntegrationTimes"
+OPIntegrationTiming = table('Size', [nSeq, 3], ...
+    'VariableTypes', ["double", "double", "uint32"], ...
+    'VariableNames', ["integrationPeriod", "integrationTime", "integrationsPerCycle"], ...
+    'RowNames', OPnames);
 
 % make OP table
 for iSeq = 1:nSeq
@@ -47,6 +49,18 @@ for iSeq = 1:nSeq
     for iMass = 1:nMasses
         OPTable.(activeCollectors(iMass))(seqName) = seqAssign(iMass,1);
     end
+
+    % Parse and assign integration time to OPIntegrationTimes table. 
+    % All times in seconds.
+    integrationPeriodString = string(method.onpeaks(iSeq).IntegPeriod);
+    integrationPeriod = double(extract(integrationPeriodString, digitsPattern))/1000;
+    OPIntegrationTiming{OPnames(iSeq),'integrationPeriod'} = integrationPeriod;
+    
+    integrationTime = str2double(method.onpeaks(iSeq).IntegTime);
+    OPIntegrationTiming{OPnames(iSeq),'integrationTime'} = integrationTime;
+
+    OPIntegrationTiming{OPnames(iSeq),'integrationsPerCycle'} = ...
+        uint32(integrationTime/integrationPeriod);
 
     % record approx isotopic masses (N values) in mass table for deltas
     for iMass = 1:nMasses
@@ -143,7 +157,23 @@ if isfield(method, 'baselines') % if baselines present
         'VariableNames', collectorNames, ...
         'RowNames', BLnames);
 
+    BLIntegrationTiming = table('Size', [nBL, 1], ...
+        'VariableTypes', "double", ...
+        'VariableNames', {'integrationTime'}, ...
+        'RowNames', BLnames);
+
     for iBL = 1:nBL
+
+        % save off baseline integration time
+        integrationPeriodString = string(method.baselines(iBL).IntegPeriod);
+        integrationPeriod = double(extract(integrationPeriodString, digitsPattern))/1000;
+        BLIntegrationTiming{BLnames(iBL),'integrationPeriod'} = integrationPeriod;
+    
+        integrationTime = str2double(method.baselines(iBL).IntegTime);
+        BLIntegrationTiming{BLnames(iBL),'integrationTime'} = integrationTime;
+
+        BLIntegrationTiming{BLnames(iBL),'integrationsPerCycle'} = ...
+            uint32(integrationTime/integrationPeriod);
 
         % if baseline mass defined by user-entered axial mass "AxMass"
         if method.baselines(iBL).BLReferences == "MASS"
@@ -182,8 +212,10 @@ end
 % save 
 method.OPTable = OPTable;
 method.OPMasses = OPMasses;
+method.OPIntegrationTiming = OPIntegrationTiming;
 method.F_ind = F_ind;
 method.BLTable = BLTable;
+method.BLIntegrationTimes = BLIntegrationTiming;
 method.MassIDs = MassIDs;
 method.detectorDeltas = detectorDeltas;
 method.axialMasses = axialMasses;

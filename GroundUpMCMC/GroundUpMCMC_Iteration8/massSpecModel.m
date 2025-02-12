@@ -147,6 +147,13 @@ classdef massSpecModel
             
         end % function get.apertureWidthMM
 
+        function collectorNames = getCollectorNames(obj)
+            % return string of collector names
+            collectorNames = convertCharsToStrings(...
+            obj.collectorArray.Properties.RowNames' ...
+            );
+        end
+
     end % public methods
 
     methods (Access = private)
