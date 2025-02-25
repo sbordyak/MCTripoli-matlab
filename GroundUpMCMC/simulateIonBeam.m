@@ -26,6 +26,9 @@ R = detector.resistance; % 1e11; % resistance, ohms
 ionsPerCoulomb = 6241509074460762607.776;
 CPSperVolt = ionsPerCoulomb/R;
 
+% true beams <= this are Poisson distributed
+smallIonBeamCPS = 100; 
+
 %% Johnson noise
 
 deltaf = 1./integrationTimes; % bandwidth in Hertz = 1/integration time
@@ -67,8 +70,8 @@ elseif detector.type == "IC"
         trueCountRates * detector.gain, ...
         ionBeamStdDevInCPS);
 
-    ionBeam = ionBeamSmall*(trueCountRates<100) + ...
-              ionBeamLarge*(trueCountRates>100);
+    ionBeam = ionBeamSmall*(trueCountRates <= smallIonBeamCPS) + ...
+              ionBeamLarge*(trueCountRates > smallIonBeamCPS);
 
 else % 
     error("unrecognized detector type, use F or IC")
