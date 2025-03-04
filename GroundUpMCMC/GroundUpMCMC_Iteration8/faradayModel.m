@@ -1,5 +1,5 @@
 classdef faradayModel < collectorModel
-    %FARADAYMODEL an Faraday collector
+    %FARADAYMODEL a Faraday collector
     %   Amplifier type and resistance if applicable
     
     properties
