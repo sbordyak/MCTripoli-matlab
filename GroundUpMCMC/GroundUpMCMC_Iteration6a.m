@@ -6,8 +6,8 @@
 %% data setup
 
 %      ABBA-3C  NoPlat PAM-2F WFBU10E CFC-3D
-data = [296.0,  291.9  289.0  284.7   283.5]';
-data1s = [6.7,    6.0    4.2    6.9     5.6]'/2;
+data = [294.3,  292.7  289.4  284.2   283.2]';
+data1s = [6.2,    8.7    4.6    7.4     6.1]'/2;
 dvar = data1s.^2;
 
 setup.ndata = length(data);
