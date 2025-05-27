@@ -10,15 +10,19 @@ setupName = "Synthetic_TwoIsotopeStatic_1Mcps_Listric";
 
 setup = getSetup(setupName);
 massSpec = massSpecModel("PhoenixKansas_1e12");
-
+mySample = referenceMaterial("NBS982");
 
 %% If synthetic data, create a new dataset
 
 
 if setup.dataMode == "synthetic"
     
+    % unpack method from TIMSAM file
     method = parseTIMSAM(setup.methodsFolder + setup.methodName + ".TIMSAM");
     method = processMethod(method, massSpec.getCollectorNames);
+
+    % populate unknowns object for synthetic data creation
+    m = modelParameters(analyte, setup);
 
 end
 

@@ -1,5 +1,5 @@
 classdef sample < analyte
-    %UNKNOWN Information about an unknown sample
+    %SAMPLE Information about an unknown sample
     %   Unknowns are analytes that that do not have known ICs.
     
     properties
@@ -10,8 +10,8 @@ classdef sample < analyte
     
     methods
         function spl = sample(name, element, species, relativeAbundances)
-            %UNKNOWN Construct an instance of this class
-            %   Create new 'unknown' object for
+            %SAMPLE Construct an instance of this class
+            %   Create new 'sample' object for an unknown
 
             if length(species) ~= length(relativeAbundances)
                 disp("BAD INPUT: # of species does not match # of abundances")
