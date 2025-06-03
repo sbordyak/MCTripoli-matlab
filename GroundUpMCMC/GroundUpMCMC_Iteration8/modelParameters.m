@@ -4,17 +4,17 @@ classdef modelParameters
     
     properties
         logratios                     double = []
-        logIntensity                  double = []
-        refVolts                      double = []
+        logIntensityKnots             double = []
+        refIntensities                double = []
         darkNoise                     double = []
         collectorRelativeEfficiencies double = []
         ionCounterDeadTime            double = []
         betaFaraday                   double = []
         betaDaly                      double = []
-        upMassTailFaraday       (1,1) double = []
-        downMassTailFaraday     (1,1) double = []
-        upMassTailIC            (1,1) double = []
-        downMassTailIC          (1,1) double = []
+        upMassTailFaraday             double = []
+        downMassTailFaraday           double = []
+        upMassTailIC                  double = []
+        downMassTailIC                double = []
         interference                         = []
     end
     
@@ -26,16 +26,50 @@ classdef modelParameters
             % For now, hard-code unknown logratios from the setup file
             % these are the subset of ratios in the analyte object that
             % have both species measured in the method file. 
-            obj.logratios = log(analyte.relativeAbundances);
-            obj.
+            obj.logratios = log( ...
+                analyte.relativeAbundances(4)/analyte.relativeAbundances(2) ...
+                );
+            obj.logIntensityKnots = setup.logmspl;
+            obj.refIntensities = setup.refIntensities;
         
-        end
+        end % constructor
         
         function modelVector = makeModelVector(obj)
-            %METHOD1 Summary of this method goes here
-            %   Detailed explanation goes here
-            outputArg = obj.Property1 + inputArg;
-        end
+            %MAKEMODELVECTOR Assemble model vector from unknown parameters
+            %   This order hard-coded. Labels for each entry in modelLabels
+            modelVector = [
+                obj.logratios; 
+                obj.logIntensityKnots;
+                obj.refIntensities;
+                obj.collectorRelativeEfficiencies;
+                obj.betaFaraday;
+                obj.betaDaly;
+                obj.upMassTailFaraday;
+                obj.downMassTailFaraday;
+                obj.darkNoise;
+                obj.upMassTailIC;
+                obj.downMassTailIC
+                ];
+        end % function modelVector
+
+        function modelLabels = makeModelLables(obj)
+            %MAKEMODELVECTOR Assemble model vector from unknown parameters
+            %   This order hard-coded. Labels for each entry in modelLabels
+            modelLabels = [
+                "obj.logratios; 
+                obj.logIntensityKnots;
+                obj.refIntensities;
+                obj.collectorRelativeEfficiencies;
+                obj.betaFaraday;
+                obj.betaDaly;
+                obj.upMassTailFaraday;
+                obj.downMassTailFaraday;
+                obj.darkNoise;
+                obj.upMassTailIC;
+                obj.downMassTailIC;
+                ];
+        end 
+
     end
 end
 
