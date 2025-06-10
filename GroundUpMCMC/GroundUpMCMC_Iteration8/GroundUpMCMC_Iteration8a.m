@@ -22,7 +22,7 @@ if setup.dataMode == "synthetic"
     method = processMethod(method, massSpec.getCollectorNames);
 
     % populate unknowns object for synthetic data creation
-    mTrue = modelParameters(mySample, setup);
+    mTrue = modelParameterSet(mySample, setup);
 
 end
 
