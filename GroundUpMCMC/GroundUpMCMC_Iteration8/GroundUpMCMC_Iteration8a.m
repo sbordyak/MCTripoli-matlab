@@ -24,5 +24,7 @@ if setup.dataMode == "synthetic"
     % populate unknowns object for synthetic data creation
     mTrue = modelParameterSet(mySample, setup);
 
+    
+
 end
 

@@ -4,11 +4,11 @@ classdef modelParameterSet
     
     properties
         logratios               (:,1) modelParameter
-        logIntensityKnots       (:,1) modelParameter
-        refIntensities          (:,1) modelParameter
-        darkNoise               (:,1) modelParameter
+        logIntensityKnots       (1,1) modelParameter
+        refIntensities          (1,1) modelParameter
+        darkNoise               (1,1) modelParameter
         collectorRelativeEfficiencies (:,1) modelParameter
-        ionCounterDeadTime      (:,1) modelParameter
+        ionCounterDeadTime      (1,1) modelParameter
         betaFaraday             (1,1) modelParameter
         betaDaly                (1,1) modelParameter
         upMassTailFaraday       (1,1) modelParameter
@@ -31,8 +31,9 @@ classdef modelParameterSet
             obj.logratios(1).value = log( ...
                 analyte.relativeAbundances(4)/analyte.relativeAbundances(2) ...
                 );
-            obj.logIntensityKnots(:).value = setup.logmspl;
+            obj.logIntensityKnots.value = setup.logmspl;
             obj.refIntensities(:).value = setup.refIntensities;
+            
             end
         
         end % constructor

@@ -7,7 +7,7 @@ classdef modelParameter
 
     properties
         isFree     logical = false
-        value      double  = []
+        value      (:,1) double  = []
         indexInSet int16   = []
     end
 

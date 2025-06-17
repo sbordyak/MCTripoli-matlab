@@ -27,6 +27,15 @@ switch setupName
     setup.upMassTailFaraday = 0;
     setup.downMassTailFaraday = 0;
 
+    % parameters for simulated measurement
+    setup.nBLIntegrations = 1e2;
+    setup.nOPIntegrations = 1e2;
+    setup.BLIntegrationTimes = ones(setup.nBLIntegrations,1);
+    setup.OPIntegrationTimes = ones(setup.nOPIntegrations,1);
+    setup.BLTimes = cumsum(setup.BLIntegrationTimes);
+    setup.OPTimes = max(setup.BLTimes) + 5 + cumsum(setup.OPIntegrationTimes);
+
+
 
 end % switch setupName
 
