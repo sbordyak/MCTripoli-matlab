@@ -6,7 +6,7 @@ classdef modelParameter
     %   indexInSet is the 
 
     properties
-        isFree     logical = false
+        isFree     (:,1) logical = false
         value      (:,1) double  = []
         indexInSet int16   = []
     end

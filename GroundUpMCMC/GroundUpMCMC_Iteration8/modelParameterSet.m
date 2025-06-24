@@ -32,7 +32,7 @@ classdef modelParameterSet
                 analyte.relativeAbundances(4)/analyte.relativeAbundances(2) ...
                 );
             obj.logIntensityKnots.value = setup.logmspl;
-            obj.refIntensities(:).value = setup.refIntensities;
+            obj.refIntensities.value = setup.refIntensities;
             
             end
         

@@ -1,4 +1,4 @@
-% GroundUpMCMC. Starting at 7b... 
+% GroundUpMCMC_8a. Starting at 7b... 
 % - introduce real methods from xml files
 % - use the methods to generate synthetic data
 % - write the synethetic data to a .txt file
@@ -10,7 +10,7 @@ setupName = "Synthetic_TwoIsotopeStatic_1Mcps_Listric";
 
 setup = getSetup(setupName);
 massSpec = massSpecModel("PhoenixKansas_1e12");
-mySample = referenceMaterial("NBS982");
+myReferenceMaterial = referenceMaterial("NBS982");
 
 %% If synthetic data, create a new dataset
 
@@ -20,10 +20,13 @@ if setup.dataMode == "synthetic"
     % unpack method from TIMSAM file
     method = parseTIMSAM(setup.methodsFolder + setup.methodName + ".TIMSAM");
     method = processMethod(method, massSpec.getCollectorNames);
+    
+    % an additional configuration info is required for synthetic data
+    setup = getConfig(setup, method);
 
     % populate unknowns object for synthetic data creation
     mTrue = modelParameterSet(mySample, setup);
-
+    
     
 
 end

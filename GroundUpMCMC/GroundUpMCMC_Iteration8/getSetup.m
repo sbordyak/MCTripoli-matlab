@@ -1,4 +1,4 @@
-function setup = getSetup(setupName)
+function setup = getSetup(setupName, method)
 %GETSETUP Make setup struct of run parameters
 %   Setup contains information not found in the data or method files
 
@@ -9,6 +9,10 @@ setup.methodsFolder = "./massSpecMethods/";
 switch setupName 
 
     case "Synthetic_TwoIsotopeStatic_1Mcps_Listric"
+
+    % 100 cycles BL and OP for two-collector static 206-208 on two Faradays 
+    % with a concave up, decaying beam described by by a cubic spline 
+    % with two segments.
 
     setup.dataMode = "synthetic"; % "synthetic" or "measured"
     setup.methodName = "TwoCollectorStaticPb";
@@ -27,14 +31,10 @@ switch setupName
     setup.upMassTailFaraday = 0;
     setup.downMassTailFaraday = 0;
 
-    % parameters for simulated measurement
-    setup.nBLIntegrations = 1e2;
-    setup.nOPIntegrations = 1e2;
-    setup.BLIntegrationTimes = ones(setup.nBLIntegrations,1);
-    setup.OPIntegrationTimes = ones(setup.nOPIntegrations,1);
-    setup.BLTimes = cumsum(setup.BLIntegrationTimes);
-    setup.OPTimes = max(setup.BLTimes) + 5 + cumsum(setup.OPIntegrationTimes);
 
+
+
+    
 
 
 end % switch setupName

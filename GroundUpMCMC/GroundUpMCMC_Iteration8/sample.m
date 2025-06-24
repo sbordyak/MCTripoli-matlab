@@ -1,6 +1,6 @@
 classdef sample < analyte
     %SAMPLE Information about an unknown sample
-    %   Unknowns are analytes that that do not have known ICs.
+    %   Unknown samples are analytes that that do not have known ICs.
     
     properties
         
