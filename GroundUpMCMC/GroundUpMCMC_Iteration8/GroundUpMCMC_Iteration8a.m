@@ -12,14 +12,14 @@ setup = getSetup(setupName);
 massSpec = massSpecModel("PhoenixKansas_1e12");
 myReferenceMaterial = referenceMaterial("NBS982");
 
+% unpack method from TIMSAM file
+method = parseTIMSAM(setup.methodsFolder + setup.methodName + ".TIMSAM");
+method = processMethod(method, massSpec.getCollectorNames);
+
 %% If synthetic data, create a new dataset
 
 
 if setup.dataMode == "synthetic"
-    
-    % unpack method from TIMSAM file
-    method = parseTIMSAM(setup.methodsFolder + setup.methodName + ".TIMSAM");
-    method = processMethod(method, massSpec.getCollectorNames);
     
     % an additional configuration info is required for synthetic data
     setup = getConfig(setup, method);
