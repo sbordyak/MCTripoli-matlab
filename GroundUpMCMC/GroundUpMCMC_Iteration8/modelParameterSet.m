@@ -3,11 +3,11 @@ classdef modelParameterSet
     %   Model parameters
     
     properties
-        logratios               (:,1) modelParameter
+        logratios               (1,1) modelParameter
         logIntensityKnots       (1,1) modelParameter
         refIntensities          (1,1) modelParameter
         darkNoise               (1,1) modelParameter
-        collectorRelativeEfficiencies (:,1) modelParameter
+        collectorRelativeEfficiencies (1,1) modelParameter
         ionCounterDeadTime      (1,1) modelParameter
         betaFaraday             (1,1) modelParameter
         betaDaly                (1,1) modelParameter
@@ -15,7 +15,7 @@ classdef modelParameterSet
         downMassTailFaraday     (1,1) modelParameter
         upMassTailIC            (1,1) modelParameter
         downMassTailIC          (1,1) modelParameter
-        interference            (:,1) modelParameter
+        interference            (1,1) modelParameter
     end
     
     methods
