@@ -31,8 +31,19 @@ classdef modelParameterSet
             obj.logratios(1).value = log( ...
                 analyte.relativeAbundances(4)/analyte.relativeAbundances(2) ...
                 );
+            obj.logratios(1).isFree = 1;
             obj.logIntensityKnots.value = setup.logmspl;
+            obj.logIntensityKnots.isFree = 1;
             obj.refIntensities.value = setup.refIntensities;
+            obj.refIntensities.isFree = 1;
+
+            obj.betaFaraday.value = setup.betaFaraday;
+            obj.betaFaraday.isFree = false;
+            obj.upMassTailFaraday.value = 0;
+            obj.upMassTailFaraday.isFree = false;
+            obj.downMassTailFaraday.value = 0;
+            obj.downMassTailFaraday.isFree = false;
+
             
             end
         

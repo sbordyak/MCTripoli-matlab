@@ -25,7 +25,7 @@ if setup.dataMode == "synthetic"
     setup = getConfig(setup, method);
 
     % populate unknowns object for synthetic data creation
-    mTrue = modelParameterSet(mySample, setup);
+    mTrue = modelParameterSet(myReferenceMaterial, setup);
     
     
 
