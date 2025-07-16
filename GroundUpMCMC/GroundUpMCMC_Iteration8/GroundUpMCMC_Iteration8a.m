@@ -8,9 +8,8 @@
 
 setupName = "Synthetic_TwoIsotopeStatic_1Mcps_Listric";
 
-setup = getSetup(setupName);
 massSpec = massSpecModel("PhoenixKansas_1e12");
-myReferenceMaterial = referenceMaterial("NBS982");
+NBS982 = referenceMaterial("NBS982");
 
 % unpack method from TIMSAM file
 method = parseTIMSAM(setup.methodsFolder + setup.methodName + ".TIMSAM");
@@ -25,7 +24,7 @@ if setup.dataMode == "synthetic"
     setup = getConfig(setup, method);
 
     % populate unknowns object for synthetic data creation
-    mTrue = modelParameterSet(myReferenceMaterial, setup);
+    mTrue = modelParameterSet(NBS982, setup);
     
     
 
