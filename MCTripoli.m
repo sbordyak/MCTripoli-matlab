@@ -34,6 +34,8 @@ method = processMethod(method, DetNames);
 [d00, data] = assembleDataVector(data, method);
 % also trims data matrices to collectors from method
 
+return
+
 d00.det = d00.det-1;
 d00.det(d00.det==0) = 10;
 

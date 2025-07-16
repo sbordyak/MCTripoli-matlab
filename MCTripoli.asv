@@ -34,6 +34,8 @@ method = processMethod(method, DetNames);
 [d00, data] = assembleDataVector(data, method);
 % also trims data matrices to collectors from method
 
+return
+
 d00.det = d00.det-1;
 d00.det(d00.det==0) = 10;
 
@@ -63,12 +65,10 @@ end
 
 
 
-for iblock = 1
+for iblock = 11
 
 
     d0 = getblock_MCT(iblock,d00);
-
-
     
     %d0 = LoadMSdata_synth(datafile,Isotopes,F_ind);
 
@@ -217,7 +217,7 @@ x0.Dsig(d0.axflag) = x0.Dsig(d0.axflag)+(2e6);
         allflag = 1;
         temp = 1;
 
-        if m<=1000;%%2*Nmod   % Use initial covariance until 2*N
+        if m<=2*Nmod   % Use initial covariance until 2*N
             C = C0;
         else % After that begin updating based on model covariance
 
@@ -234,7 +234,7 @@ x0.Dsig(d0.axflag) = x0.Dsig(d0.axflag)+(2e6);
 
         delx_adapt = delx_adapt.*diagC;
 
-        %delx_adapt(5:end-1)=0;
+        %delx_adapt(20:end)=0;
 
         % Update model and save proposed update values (delx)
         [x2,delx] = UpdateMSv2(oper,x,psig,prior,ensemble,xcov,delx_adapt,adaptflag,allflag);
@@ -299,6 +299,8 @@ x0.Dsig(d0.axflag) = x0.Dsig(d0.axflag)+(2e6);
 
 
         [xmean,xcov] = UpdateMeanCovMS(x,xmean,xcov,m);
+
+        %figure(99);imagesc(xcov);colorbar;drawnow
 
         % Save model values to ensemble at regular intervals
         if  mod(m,datsav)==0
