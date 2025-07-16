@@ -27,8 +27,11 @@ classdef analyte
             normalizedAbundances = obj.relativeAbundances/sum(obj.relativeAbundances);
         end
 
-        function logRatios = logRatioAbundances(obj)
+        function logRatios = logRatioAbundances(obj, indices)
             logRatios = log(obj.relativeAbundances);
+            if exist('indices', 'var') % if optional indices provided
+                logRatios = logRatios(indices);
+            end
         end
 
         function denIsoIndex = denominatorIsotopeIndex(obj)
@@ -57,10 +60,15 @@ classdef analyte
             normMassVector = massVec / denMass;
         end
 
-        function logNormMassVector = logNormMasses(obj)
+        function logNormMassVector = logNormMasses(obj, indices)
             %LOGNORMMASSES vector of log-ratios of masses
             % with denominatorIsotope in denominator (=1 in relative abundance vector)
+            % (optional) indices: indices to the vector
             logNormMassVector = log(obj.normMasses);
+            if exist('indices', 'var') % if optional indices provided
+                logNormMassVector = logNormMassVector(indices);
+            end
+
         end
 
 
