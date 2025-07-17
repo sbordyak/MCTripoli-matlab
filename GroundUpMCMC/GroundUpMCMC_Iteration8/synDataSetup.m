@@ -19,6 +19,7 @@ classdef synDataSetup
 
     end
 
+    %%%%%%%%%%%%%%%%%%%%%%%%%%
     methods (Access = public)
 
         function obj = synDataSetup(synDataSetupName)
@@ -79,7 +80,6 @@ classdef synDataSetup
             %MAKESYNDATA Make synthetic dataset (ie data vectors)
             %   Uses massSpec, method, and true modelParameterSet
             
-
             arguments (Output)
                 dataset (1,1) dataVectors
             end % arguments
@@ -88,8 +88,18 @@ classdef synDataSetup
 
         end % makeSynData method 
 
+
     end % public methods block
 
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%
+    methods (Access = protected)
+
+
+    end % protected methods block
+
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     methods (Static, Access = protected)
 
         function ionBeam = simulateIonBeam(trueCountRates, integrationTimes, detector)
