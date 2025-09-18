@@ -27,7 +27,7 @@ truth.modelParameterNames = ["$\log(a/b)$";
                              "$re\hspace{-1pt}f_1$"; 
                              "$re\hspace{-1pt}f_2$"];
 truth.speciesNames = ["a"; "b"];
-truth.lograb = log(0.0001);   % log(a/b), with (a/b) <= 1 preferred
+truth.lograb = log(0.1);   % log(a/b), with (a/b) <= 1 preferred
 truth.logmspl = [     % nseg = 2, bdeg = 3, t = 106:205
     14.4846439892590
     14.5251376191125

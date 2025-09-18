@@ -5,7 +5,7 @@ classdef synDataSetup
 
     properties
         
-        modelParameters modelParameterSet
+        mTrue           modelParameterSet
         nBlocks         uint32
         BLTimes         (:,1) double
         OPTimes         (:,1) double
@@ -51,7 +51,7 @@ classdef synDataSetup
                 mTrue.upMassTailFaraday.isFree = false;
                 mTrue.downMassTailFaraday.value = 0;
                 mTrue.downMassTailFaraday.isFree = false;
-                obj.modelParameters = mTrue;
+                obj.mTrue = mTrue;
 
                 % other parameters needed for synthetic data generation
                 obj.nBlocks = 1;
