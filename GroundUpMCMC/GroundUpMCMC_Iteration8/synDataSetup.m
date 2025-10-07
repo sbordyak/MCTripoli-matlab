@@ -30,12 +30,16 @@ classdef synDataSetup
 
                 case "Synthetic_TwoIsotopeStatic_1Mcps_Listric"
                 % first synthetic data example, from GroundUp7b
+
+                % massSpec
+                obj.massSpec = massSpecModel("PhoenixKansas_1e12");
                 
                 % model parameter set
                 NBS982 = referenceMaterial("NBS982");
                 mTrue = modelParameterSet();
                 mTrue.logratios.value = NBS982.logRatioAbundances(4);
                 mTrue.logratios.isFree = 1;
+                
                 mTrue.logIntensityKnots.value = [ % nseg = 2, bdeg = 3, t = 106:205
                     14.4846439892590;
                     14.5251376191125;
@@ -43,23 +47,45 @@ classdef synDataSetup
                     14.4292231240153;
                     14.4531727595166];
                 mTrue.logIntensityKnots.isFree = true(5, 1);
+                
                 mTrue.refIntensities.value = [-1e2; 2e2];
                 mTrue.refIntensities.isFree = true(2, 1);
+
+                mTrue.darkNoise.value = 0;
+                mTrue.darkNoise.isFree = false;
+
+                mTrue.collectorRelativeEfficiencies.value = ...
+                    1 * isFaraday(obj.massSpec.collectorArray.collectors) + ...
+                    1 * isIonCounter(obj.massSpec.collectorArray.collectors);
+                mTrue.collectorRelativeEfficiencies.isFree = false;
+
+                mTrue.ionCounterDeadTime.value = 0;
+                mTrue.ionCounterDeadTime.isFree = false;
+
                 mTrue.betaFaraday.value = -0.2;
                 mTrue.betaFaraday.isFree = false;
+
+                mTrue.betaDaly.value = 0;
+                mTrue.betaDaly.isFree = false;
+                
                 mTrue.upMassTailFaraday.value = 0;
                 mTrue.upMassTailFaraday.isFree = false;
+                
                 mTrue.downMassTailFaraday.value = 0;
                 mTrue.downMassTailFaraday.isFree = false;
+
+                mTrue.upMassTailIC.value = 0;
+                mTrue.upMassTailIC.isFree = false;
+
+                mTrue.downMassTailIC.value = 0;
+                mTrue.downMassTailIC.isFree = false;
+                
                 obj.mTrue = mTrue;
 
                 % other parameters needed for synthetic data generation
                 obj.nBlocks = 1;
                 obj.BLTimes = 1:100;
                 obj.OPTimes = 106:205;
-
-                % massSpec
-                obj.massSpec = massSpecModel("PhoenixKansas_1e12");
 
                 % make method struct from TIMSAM and massSpec collector names
                 methodsFolder = "./massSpecMethods/";
@@ -84,7 +110,8 @@ classdef synDataSetup
                 dataset (1,1) dataVectors
             end % arguments
 
-            dataset = obj.method;
+            % unpack method to create serial indices (block/
+
 
         end % makeSynData method 
 
