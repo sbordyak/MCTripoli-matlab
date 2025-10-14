@@ -215,10 +215,63 @@ method.OPMasses = OPMasses;
 method.OPIntegrationTiming = OPIntegrationTiming;
 method.F_ind = F_ind;
 method.BLTable = BLTable;
-method.BLIntegrationTimes = BLIntegrationTiming;
+method.BLIntegrationTiming = BLIntegrationTiming;
 method.MassIDs = MassIDs;
 method.detectorDeltas = detectorDeltas;
 method.axialMasses = axialMasses;
 
-end % function processMethod
 
+%% add info for integrations and settle times from makeSyntheticData.m
+% originally written in 2023 for Tripoli and FaradayRelativeEfficiencies
+% note: now only need settleTimes from this block 2025-10-14 NM
+
+nBaselines = size(method.baselines,2);
+nOnPeaks   = size(method.onpeaks,2);
+
+% extract integration period and time for each baseline
+integrations.BL.n = zeros(nBaselines,1);
+integrations.BL.integPeriods = zeros(nBaselines,1);
+for iBL = 1:nBaselines
+    
+    integTime   = method.baselines(iBL).IntegTime; % integration time
+    integTime   = str2double(integTime);               % integration time, s
+    integPeriod = method.baselines(iBL).IntegPeriod; % integ period (string)
+    integPeriod = str2double(integPeriod(3:end));      % integ period, ms
+    integrations.BL.n(iBL) = integTime/(integPeriod/1e3);
+    integrations.BL.integPeriods(iBL) = integPeriod/1e3; % in seconds
+
+    settleTimeiBL = method.baselines(iBL).MagnetSettleTime;    % settle time, ms
+    settleTimeiBL = str2double(settleTimeiBL)/1e3;             % settle time, seconds
+    settleTime.BL(iBL) = settleTimeiBL; 
+
+end % for iBL
+
+% extract integration period and time for each OP sequence
+integrations.OP.n = zeros(nOnPeaks,1);
+integrations.OP.integPeriods = zeros(nOnPeaks,1);
+for iOP = 1:nOnPeaks
+
+    integTime   = method.onpeaks(iOP).IntegTime; % integration time, s
+    integTime   = str2double(integTime);               % integration time, s
+    integPeriod = method.onpeaks(iOP).IntegPeriod; % integ period (string)
+    integPeriod = str2double(integPeriod(3:end));  % integ period, ms
+    integrations.OP.n(iOP) = integTime/(integPeriod/1e3);
+    integrations.OP.integPeriods(iOP) = integPeriod/1e3; % in seconds
+
+    settleTimeiOP = method.onpeaks(iOP).MagnetSettleTime;    % settle time, ms
+    settleTimeiOP = str2double(settleTimeiOP)/1e3;           % settle time, seconds
+    settleTime.OP(iOP) = settleTimeiOP; 
+
+end
+
+
+flyBack = method.settings.MagnetFlybackSettleTime; % + time to fly back, ms
+settleTime.flyBack = str2double(flyBack)/1e3;
+
+% save off integrations and settleTime in big method struct
+% definitely some redundant information here - NM 2025-10-14
+% method.integrations = integrations; % taken care of in 
+method.settleTime = settleTime;
+
+
+end % function processMethod
