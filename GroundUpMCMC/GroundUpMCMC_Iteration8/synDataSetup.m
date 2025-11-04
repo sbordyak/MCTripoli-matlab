@@ -136,12 +136,11 @@ classdef synDataSetup
             %   Johnson-Nyquist noise.  No dead time correction.
             %
             %   Inputs:
-            %   - trueCountRates: vector of true count rates in cps
+            %   - trueCountRates: vector of noiseless measured count rates in cps
             %   - integrationTimes: vector of integration times in cps
-            %   - detector: struct containing fields
+            %   - detector: struct or object containing fields
             %       - type = "F" or "IC" for "Faraday" or "Ion Counter"
             %       - resistance = eg 1e11 or 1e12
-            %       - gain = eg 1 or 0.9, fraction of trueCounts measured by detector
             %
             %   Output:
             %   - ionBeam: vector of measured intensities, with
@@ -170,7 +169,7 @@ classdef synDataSetup
 
             % Poisson variance = total ions = (counts per second) / seconds
             % units of cps^2
-            PoissonVarianceInCPS = (trueCountRates*detector.gain) ./ integrationTimes;
+            PoissonVarianceInCPS = trueCountRates ./ integrationTimes;
 
 
             %% Create output
@@ -183,7 +182,7 @@ classdef synDataSetup
 
                 ionBeam = random(...
                     'normal', ...
-                    trueCountRates * detector.gain, ...
+                    trueCountRates, ...
                     ionBeamStdDevInCPS);
 
             elseif detector.type == "IC"
@@ -193,12 +192,12 @@ classdef synDataSetup
                 ionBeamStdDevInCPS = sqrt(totalVariance);
 
                 ionBeamSmall = poissrnd(...
-                    trueCountRates * detector.gain ./ integrationTimes)...
+                    trueCountRates ./ integrationTimes)...
                     * integrationTimes;
 
                 ionBeamLarge = random(...
                     'normal', ...
-                    trueCountRates * detector.gain, ...
+                    trueCountRates, ...
                     ionBeamStdDevInCPS);
 
                 ionBeam = ionBeamSmall*(trueCountRates <= smallIonBeamCPS) + ...
